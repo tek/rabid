@@ -10,14 +10,14 @@ import cats.effect.IO
 import cats.implicits._
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
-import connection.{Message, Communicate}
+import connection.{Message, Input}
 
 object Interpreter
 {
   def send(channel: ChannelConnection)(message: Message): Action.Effect[Unit] =
     for {
       _ <- Action.Effect.eval(log(s"channel ${channel.number}", s"sending $message"))
-      _ <- Action.Effect.pull(Pull.output1(Communicate.Rabbit(message)))
+      _ <- Action.Effect.pull(Pull.output1(Input.Rabbit(message)))
     } yield ()
 
   def sendContent(channel: ChannelConnection, classId: Short, payload: ByteVector): Action.Effect[Unit] =

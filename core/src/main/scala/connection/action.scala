@@ -21,7 +21,7 @@ object Action
   type Effect[A] = EitherT[State, Err, A]
 
   case object Listen
-  extends Action[Communicate]
+  extends Action[Input]
 
   case class SetConnected(state: Boolean)
   extends Action[Unit]

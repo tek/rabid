@@ -147,14 +147,6 @@ object Message
 
 case class Exchange[A, B](in: Queue[IO, A], out: Queue[IO, B])
 
-sealed trait ConsumerRequest
-
-object ConsumerRequest
-{
-  case class CreateChannel(channel: Channel)
-  extends ConsumerRequest
-}
-
 sealed trait ConsumerResponse
 
 object ConsumerResponse
@@ -163,24 +155,24 @@ object ConsumerResponse
   extends ConsumerResponse
 }
 
-sealed trait Communicate
+sealed trait Input
 
-object Communicate
+object Input
 {
   case object Connected
-  extends Communicate
+  extends Input
 
   case class Rabbit(message: Message)
-  extends Communicate
+  extends Input
 
-  case class Channel(header: FrameHeader, body: FrameBody)
-  extends Communicate
+  case class SendToChannel(header: FrameHeader, body: FrameBody)
+  extends Input
 
-  case class Request(request: ConsumerRequest)
-  extends Communicate
+  case class CreateChannel(channel: Channel)
+  extends Input
 
   case class ChannelCreated(number: Short, id: String)
-  extends Communicate
+  extends Input
 }
 
 sealed trait ConnectionState

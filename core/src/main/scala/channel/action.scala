@@ -9,7 +9,7 @@ import cats.effect.IO
 import cats.free.Free
 import fs2.async.mutable.Signal
 
-import connection.Communicate
+import connection.Input
 
 sealed trait Action[A]
 
@@ -17,7 +17,7 @@ object Action
 {
   type Attempt[A] = scodec.Attempt[Action[A]]
   type Step[A] = Free[Attempt, A]
-  type Pull[A] = fs2.Pull[IO, Communicate, A]
+  type Pull[A] = fs2.Pull[IO, Input, A]
   type Effect[A] = EitherT[Pull, Err, A]
 
   case object SendAmqpHeader
@@ -41,7 +41,7 @@ object Action
   case class Log(message: String)
   extends Action[Unit]
 
-  case class Output(comm: Communicate)
+  case class Output(comm: Input)
   extends Action[Unit]
 
   case object AwaitConnection
@@ -150,5 +150,5 @@ object Actions
 
   def channelCreated: Step[Unit] = liftF(ChannelCreated)
 
-  def output(comm: Communicate): Step[Unit] = liftF(Output(comm))
+  def output(comm: Input): Step[Unit] = liftF(Output(comm))
 }

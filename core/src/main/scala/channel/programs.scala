@@ -9,7 +9,7 @@ import cats.effect.IO
 import cats.implicits._
 
 import Field._
-import connection.Communicate
+import connection.Input
 import Actions._
 
 object programs
@@ -23,7 +23,7 @@ object programs
       _ <- sendMethod(method.connection.tuneOk(tune))
       _ <- sendMethod(method.connection.open)
       openOk <- receiveMethod[Method.connection.OpenOk]
-      _ <- Action.liftF(Action.Output(Communicate.Connected))
+      _ <- Action.liftF(Action.Output(Input.Connected))
     } yield ActionResult.Continue
 
   def serverClose(code: Short, text: String, classId: Short, methodId: Short): Action.Step[ActionResult] =
@@ -49,7 +49,7 @@ object programs
       _ <- sendMethod(method.channel.open)
       openOk <- receiveMethod[Method.channel.OpenOk]
       _ <- channelCreated
-      _ <- output(Communicate.ChannelCreated(number, openOk.channelId.data))
+      _ <- output(Input.ChannelCreated(number, openOk.channelId.data))
     } yield ActionResult.Continue
 
   def declareExchange(name: String): Action.Step[ActionResult] =

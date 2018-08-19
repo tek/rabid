@@ -12,7 +12,7 @@ import cats.syntax.flatMap._
 import cats.data.EitherT
 import cats.effect.IO
 
-import connection.{Communicate, Exchange, ConsumerResponse}
+import connection.{Input, Exchange, ConsumerResponse}
 
 case class ChannelOutput(number: Short)
 
@@ -80,7 +80,7 @@ object Channel
     } yield next
   }
   def process(interpreter: Action ~> Action.Effect)(input: Stream[IO, ChannelProg])
-  : Pull[IO, Communicate, Unit] =
+  : Pull[IO, Input, Unit] =
     for {
       element <- input.pull.uncons1
       a <- element match {
@@ -101,6 +101,6 @@ object Channel
 
   def run(channel: ChannelConnection)
   (implicit ec: ExecutionContext)
-  : Stream[IO, Communicate] =
+  : Stream[IO, Input] =
     process(Interpreter.interpreter(channel))(channelInput(channel)).stream
 }

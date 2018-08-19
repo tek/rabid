@@ -27,36 +27,26 @@ case class Connection(
 
 object Connection
 {
-  type ChannelPool = Queue[IO, Stream[IO, Communicate]]
+  type ChannelPool = Queue[IO, Stream[IO, Input]]
 
   def sendToRabbit(message: Message): Action.Step[ActionResult] =
-    for {
-      _ <- Action.liftF(Action.Send(message))
-    } yield ActionResult.Continue
+    Action.liftF(Action.Send(message)).as(ActionResult.Continue)
 
   def sendToChannel(header: FrameHeader, body: FrameBody): Action.Step[ActionResult] =
-    for {
-      _ <- Action.liftF(Action.SendToChannel(header, body))
-    } yield ActionResult.Continue
+    Action.liftF(Action.SendToChannel(header, body)).as(ActionResult.Continue)
 
-  def consumerRequest: ConsumerRequest => Action.Step[ActionResult] = {
-    case ConsumerRequest.CreateChannel(channel) =>
-      for {
-        _ <- Action.liftF(Action.CreateChannel(channel))
-      } yield ActionResult.Continue
-  }
+  def consumerRequest(channel: Channel): Action.Step[ActionResult] =
+    Action.liftF(Action.CreateChannel(channel)).as(ActionResult.Continue)
 
   def channelCreated(number: Short, id: String): Action.Step[ActionResult] =
-    for {
-      _ <- Action.liftF(Action.ChannelCreated(number, id))
-    } yield ActionResult.Continue
+    Action.liftF(Action.ChannelCreated(number, id)).as(ActionResult.Continue)
 
-  def send: Communicate => Action.Step[ActionResult] = {
-    case Communicate.Connected => Free.pure(ActionResult.Connected)
-    case Communicate.Rabbit(message) => sendToRabbit(message)
-    case Communicate.Channel(header, body) => sendToChannel(header, body)
-    case Communicate.Request(request) => consumerRequest(request)
-    case Communicate.ChannelCreated(number, id) => channelCreated(number, id)
+  def send: Input => Action.Step[ActionResult] = {
+    case Input.Connected => Free.pure(ActionResult.Connected)
+    case Input.Rabbit(message) => sendToRabbit(message)
+    case Input.SendToChannel(header, body) => sendToChannel(header, body)
+    case Input.CreateChannel(request) => consumerRequest(request)
+    case Input.ChannelCreated(number, id) => channelCreated(number, id)
   }
 
   def listen: Action.Step[ActionResult] =

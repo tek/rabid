@@ -35,7 +35,7 @@ object Interpreter
 
   def channelOutput(channels: Connection.ChannelPool)
   (implicit ec: ExecutionContext)
-  : Stream[IO, Communicate] =
+  : Stream[IO, Input] =
     channels.dequeue.join(10)
 
   def startChannel(connection: ChannelConnection)
@@ -137,16 +137,16 @@ object Interpreter
 
   def listenChannels(pool: Connection.ChannelPool)
   (implicit ec: ExecutionContext)
-  : Stream[IO, Communicate] =
+  : Stream[IO, Input] =
     channelOutput(pool)
 
-  def receiveFrame(client: tcp.Socket[IO]): OptionT[IO, Communicate] =
+  def receiveFrame(client: tcp.Socket[IO]): OptionT[IO, Input] =
     for {
       header <- OptionT(receiveAs[FrameHeader](client)("frame header")(7))
       body <- OptionT(receiveAs[FrameBody](client)("frame body")(header.size + 1)(FrameBody.codec(header.size)))
-    } yield Communicate.Channel(header, body)
+    } yield Input.SendToChannel(header, body)
 
-  def listenRabbitLoop(client: tcp.Socket[IO])(state: Unit): Pull[IO, Communicate, Option[Unit]] =
+  def listenRabbitLoop(client: tcp.Socket[IO])(state: Unit): Pull[IO, Input, Option[Unit]] =
     for {
       response <- Pull.eval(receiveFrame(client).value)
       a <- response match {
@@ -155,13 +155,13 @@ object Interpreter
       }
     } yield a.map(_ => state)
 
-  def listenRabbit(client: tcp.Socket[IO]): Stream[IO, Communicate] =
+  def listenRabbit(client: tcp.Socket[IO]): Stream[IO, Input] =
     Pull.loop(listenRabbitLoop(client))(()).stream
 
-  def listen(client: tcp.Socket[IO], pool: Connection.ChannelPool, input: Queue[IO, ConsumerRequest])
+  def listen(client: tcp.Socket[IO], pool: Connection.ChannelPool, channels: Queue[IO, Input])
   (implicit ec: ExecutionContext)
-  : Stream[IO, Communicate] =
-    listenChannels(pool).merge(listenRabbit(client)).merge(input.dequeue.map(Communicate.Request(_)))
+  : Stream[IO, Input] =
+    listenChannels(pool).merge(listenRabbit(client)).merge(channels.dequeue)
 
   def log(message: String): IO[Unit] =
     for {
@@ -169,7 +169,7 @@ object Interpreter
       _ <- logger.info(message)
     } yield ()
 
-  def nativeInterpreter(client: tcp.Socket[IO], listen: Queue[IO, Communicate])
+  def nativeInterpreter(client: tcp.Socket[IO], listen: Queue[IO, Input])
   (implicit ec: ExecutionContext)
   : Action ~> Action.Effect =
     new (Action ~> Action.Effect) {
@@ -205,16 +205,16 @@ object Interpreter
   : Stream[IO, (
     Connection.ChannelPool,
     Stream[IO, Unit],
-    Queue[IO, ConsumerRequest],
+    Queue[IO, Input],
     Signal[IO, Boolean],
     Action ~> Action.Effect,
     IO[Unit],
     )] =
     for {
       client <- tcp.client[IO](new InetSocketAddress(host, port))
-      pool <- Stream.eval(Queue.unbounded[IO, Stream[IO, Communicate]])
-      queue <- Stream.eval(Queue.unbounded[IO, Communicate])
-      input <- Stream.eval(Queue.unbounded[IO, ConsumerRequest])
+      pool <- Stream.eval(Queue.unbounded[IO, Stream[IO, Input]])
+      queue <- Stream.eval(Queue.unbounded[IO, Input])
+      input <- Stream.eval(Queue.unbounded[IO, Input])
       connected <- Stream.eval(Signal[IO, Boolean](false))
     } yield (
       pool,

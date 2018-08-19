@@ -12,7 +12,7 @@ import io.circe.{Encoder, Decoder}
 import io.circe.syntax._
 import io.circe.parser._
 
-import connection.{ConsumerRequest, Connection}
+import connection.{Connection, Input}
 import channel.{Channel, ChannelProg, programs}
 
 // in order to remove the Signal from the consume programs, make ChannelProg an ADT with variants Sync/Queue/Signal
@@ -91,13 +91,13 @@ case class ChannelApi(channel: Channel)
     boundQueue(name, name, name)
 }
 
-case class Rabid(queue: FQueue[IO, ConsumerRequest])
+case class Rabid(queue: FQueue[IO, Input])
 {
   def channel(implicit ec: ExecutionContext): Stream[IO, ChannelApi] =
     Stream.eval(
       for {
         channel <- Channel.cons
-        _ <- queue.enqueue1(ConsumerRequest.CreateChannel(channel))
+        _ <- queue.enqueue1(Input.CreateChannel(channel))
       } yield ChannelApi(channel)
     )
 }
