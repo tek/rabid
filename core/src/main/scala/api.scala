@@ -7,6 +7,7 @@ import scala.concurrent.ExecutionContext
 import fs2.Stream
 import fs2.async.mutable.Queue
 import cats.effect.IO
+import cats.implicits._
 import io.circe.Encoder
 import io.circe.syntax._
 
@@ -30,6 +31,9 @@ case class ExchangeApi(name: String, channel: Channel)
       s"publish to `$name` as `$routingKey`: $message",
       programs.publish1(name, routingKey, message.asJson.spaces2)
     )(channel)
+
+  def publish[A: Encoder](routingKey: String)(messages: List[A]): Stream[IO, Unit] =
+    messages.traverse(publish1(routingKey)).void
 }
 
 case class QueueApi(exchange: ExchangeApi, name: String, channel: Channel)

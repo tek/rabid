@@ -27,6 +27,7 @@ object ConnectSpec
       queue <- channel.simpleQueue("cue")
       _ <- queue.exchange.publish1("cue")(Data(1))
       _ <- queue.exchange.publish1("cue")(Data(2))
+      _ <- queue.exchange.publish("cue")(List(Data(3), Data(4)))
       // a <- queue.consume1[Data]
     } yield {
       // println(a)
@@ -35,7 +36,7 @@ object ConnectSpec
   def connectS: Stream[IO, Unit] =
     for {
       scheduler <- Scheduler[IO](1)
-      _ <- Rabid.native("localhost", 5672)(consume).mergeHaltR(scheduler.sleep[IO](20.seconds))
+      _ <- Rabid.native("localhost", 5672)(consume).mergeHaltR(scheduler.sleep[IO](5.seconds))
     } yield ()
 
   def connect: IO[Unit] =
