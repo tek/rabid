@@ -70,8 +70,6 @@ object Interpreter
             Action.Effect.pull(Pull.output1(comm))
           case Action.AwaitConnection =>
             awaitSignal(channel.connected)
-          case Action.AwaitChannel =>
-            awaitSignal(channel.created)
           case Action.ChannelCreated =>
             Action.Effect.eval(channel.created.set(true))
         }

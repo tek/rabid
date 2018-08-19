@@ -97,7 +97,7 @@ object Channel
   def channelInput(channel: ChannelConnection)
   (implicit ec: ExecutionContext)
   : Stream[IO, ChannelProg] =
-    channel.progs.dequeue.merge(channel.consumerProgs.dequeue.pauseWhen(channel.created.map(!_)))
+    channel.progs.dequeue.merge(blockedBy(channel.created)(channel.consumerProgs.dequeue))
 
   def run(channel: ChannelConnection)
   (implicit ec: ExecutionContext)

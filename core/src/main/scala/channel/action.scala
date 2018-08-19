@@ -47,9 +47,6 @@ object Action
   case object AwaitConnection
   extends Action[Unit]
 
-  case object AwaitChannel
-  extends Action[Unit]
-
   case object ChannelCreated
   extends Action[Unit]
 
@@ -147,8 +144,6 @@ object Actions
   def receiveContent: Step[ByteVector] = liftF(ReceiveContent)
 
   def awaitConnection: Step[Unit] = liftF(AwaitConnection)
-
-  def awaitChannel: Step[Unit] = liftF(AwaitChannel)
 
   def log[A](message: A): Step[Unit] =
     liftF(Log(message.toString))

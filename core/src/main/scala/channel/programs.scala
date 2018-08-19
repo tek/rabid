@@ -54,7 +54,6 @@ object programs
 
   def declareExchange(name: String): Action.Step[ActionResult] =
     for {
-      _ <- awaitChannel
       _ <- log(s"declaring exchange `$name`")
       _ <- sendMethod(method.exchange.declare(name))
       _ <- receiveMethod[Method.exchange.DeclareOk.type]
@@ -62,7 +61,6 @@ object programs
 
   def declareQueue(name: String): Action.Step[ActionResult] =
     for {
-      _ <- awaitChannel
       _ <- log(s"declaring queue `$name`")
       _ <- sendMethod(method.queue.declare(name))
       _ <- receiveMethod[Method.queue.DeclareOk]
@@ -70,7 +68,6 @@ object programs
 
   def bindQueue(exchange: String, name: String, routingKey: String): Action.Step[ActionResult] =
     for {
-      _ <- awaitChannel
       _ <- log(s"binding queue `$name` to `$exchange`")
       _ <- sendMethod(method.queue.bind(exchange, name, routingKey))
       _ <- receiveMethod[Method.queue.BindOk.type]
@@ -78,7 +75,6 @@ object programs
 
   def publish1(exchange: String, routingKey: String, data: String): Action.Step[ActionResult] =
     for {
-      _ <- awaitChannel
       _ <- log(s"publishing to `$exchange` with `$routingKey`")
       _ <- sendMethod(method.basic.publish(exchange, routingKey))
       _ <- sendContent(ClassId.basic.id, data)
@@ -86,7 +82,6 @@ object programs
 
   def consume1(queue: String, signal: Signal[IO, Option[Either[String, String]]]): Action.Step[ActionResult] =
     for {
-      _ <- awaitChannel
       _ <- log(s"consuming one from `$queue`")
       _ <- sendMethod(method.basic.get(queue, false))
       response <- receiveFramePayload[Method.basic.GetResponse]

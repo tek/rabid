@@ -30,7 +30,7 @@ object ConnectSpec
       _ <- queue.exchange.publish("cue")(List(Data(3), Data(4)))
       a <- queue.queue.consume1[Data]
     } yield {
-      // println(a)
+      println(a)
     }
 
   def connectS: Stream[IO, Unit] =

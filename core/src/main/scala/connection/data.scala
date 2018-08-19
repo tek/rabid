@@ -1,11 +1,9 @@
 package rabid
 package connection
 
-import scala.collection.immutable.SortedMap
 import scala.annotation.tailrec
 
-import fs2.Stream
-import fs2.async.mutable.{Queue, Signal}
+import fs2.async.mutable.Queue
 import scodec.{Encoder, Decoder, Codec, Attempt}
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -14,7 +12,7 @@ import cats.effect.IO
 import cats.implicits._
 import shapeless.{HNil, ::}
 
-import channel.{ChannelConnection, Channel}
+import channel.Channel
 
 sealed trait FrameType
 
@@ -223,17 +221,4 @@ object ActionResult
 
   case object Started
   extends ActionResult
-}
-
-case class ConnectionData(
-  pool: ConnectionData.ChannelPool,
-  channel0: ChannelConnection,
-  channels: SortedMap[Short, ChannelConnection],
-  state: ConnectionState,
-  connected: Signal[IO, Boolean],
-)
-
-object ConnectionData
-{
-  type ChannelPool = Queue[IO, Stream[IO, Communicate]]
 }

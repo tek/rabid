@@ -33,7 +33,7 @@ object Interpreter
         } yield ()
     }
 
-  def channelOutput(channels: ConnectionData.ChannelPool)
+  def channelOutput(channels: Connection.ChannelPool)
   (implicit ec: ExecutionContext)
   : Stream[IO, Communicate] =
     channels.dequeue.join(10)
@@ -135,7 +135,7 @@ object Interpreter
       }
     } yield output
 
-  def listenChannels(pool: ConnectionData.ChannelPool)
+  def listenChannels(pool: Connection.ChannelPool)
   (implicit ec: ExecutionContext)
   : Stream[IO, Communicate] =
     channelOutput(pool)
@@ -158,7 +158,7 @@ object Interpreter
   def listenRabbit(client: tcp.Socket[IO]): Stream[IO, Communicate] =
     Pull.loop(listenRabbitLoop(client))(()).stream
 
-  def listen(client: tcp.Socket[IO], pool: ConnectionData.ChannelPool, input: Queue[IO, ConsumerRequest])
+  def listen(client: tcp.Socket[IO], pool: Connection.ChannelPool, input: Queue[IO, ConsumerRequest])
   (implicit ec: ExecutionContext)
   : Stream[IO, Communicate] =
     listenChannels(pool).merge(listenRabbit(client)).merge(input.dequeue.map(Communicate.Request(_)))
@@ -203,7 +203,7 @@ object Interpreter
   def native(host: String, port: Int)
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
   : Stream[IO, (
-    ConnectionData.ChannelPool,
+    Connection.ChannelPool,
     Stream[IO, Unit],
     Queue[IO, ConsumerRequest],
     Signal[IO, Boolean],
