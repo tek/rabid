@@ -2,7 +2,7 @@ package rabid
 package channel
 
 import fs2.Pull
-import fs2.async.immutable.Signal
+import fs2.async.mutable.Signal
 import scodec.bits.ByteVector
 import cats.~>
 import cats.data.EitherT
@@ -14,14 +14,30 @@ import connection.{Message, Communicate}
 
 object Interpreter
 {
-  def send(message: Message): Action.Effect[Unit] =
+  def send(channel: ChannelConnection)(message: Message): Action.Effect[Unit] =
     for {
-      _ <- Action.Effect.eval(log("channel", s"sending $message"))
+      _ <- Action.Effect.eval(log(s"channel ${channel.number}", s"sending $message"))
       _ <- Action.Effect.pull(Pull.output1(Communicate.Rabbit(message)))
+    } yield ()
+
+  def sendContent(channel: ChannelConnection, classId: Short, payload: ByteVector): Action.Effect[Unit] =
+    for {
+      frames <- Action.Effect.attempt(Message.Frame.content(channel.number, classId, payload))
+      _ <- frames.traverse(send(channel))
     } yield ()
 
   def receive(channel: ChannelConnection): Action.Effect[ByteVector] =
     EitherT.liftF(Pull.eval(channel.receive.dequeue1))
+
+  def receiveContent(channel: ChannelConnection): Action.Effect[ByteVector] =
+    for {
+      header <- receive(channel)
+      body <- receive(channel)
+    } yield body
+
+  def notifyConsumer(signal: Signal[IO, Option[Either[String, String]]], data: Either[String, String])
+  : Action.Effect[Unit] =
+    Action.Effect.eval(signal.set(Some(data)))
 
   def log(name: String, message: String): IO[Unit] =
     for {
@@ -37,19 +53,20 @@ object Interpreter
       def apply[A](action: Action[A]): Action.Effect[A] =
         action match {
           case Action.SendAmqpHeader =>
-            send(Message.header)
+            send(channel)(Message.header)
           case Action.SendMethod(payload) =>
-            send(Message.Frame.method(channel.number, payload))
+            send(channel)(Message.Frame.method(channel.number, payload))
           case Action.SendContent(classId, payload) =>
-            for {
-              frames <- Action.Effect.attempt(Message.Frame.content(channel.number, classId, payload))
-              _ <- frames.traverse(send)
-            } yield ()
+            sendContent(channel, classId, payload)
           case Action.Receive =>
             receive(channel)
+          case Action.ReceiveContent =>
+            receiveContent(channel)
+          case Action.NotifyConsumer(signal, data) =>
+            notifyConsumer(signal, data)
           case Action.Log(message) =>
             Action.Effect.eval(log(s"channel ${channel.number}", message))
-          case Action.Output(comm: Communicate) =>
+          case Action.Output(comm) =>
             Action.Effect.pull(Pull.output1(comm))
           case Action.AwaitConnection =>
             awaitSignal(channel.connected)

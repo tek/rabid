@@ -5,55 +5,93 @@ import java.nio.channels.AsynchronousChannelGroup
 import scala.concurrent.ExecutionContext
 
 import fs2.Stream
-import fs2.async.mutable.Queue
+import fs2.async.mutable.{Queue => FQueue, Signal}
 import cats.effect.IO
 import cats.implicits._
-import io.circe.Encoder
+import io.circe.{Encoder, Decoder}
 import io.circe.syntax._
+import io.circe.parser._
 
 import connection.{ConsumerRequest, Connection}
 import channel.{Channel, ChannelProg, programs}
 
+// in order to remove the Signal from the consume programs, make ChannelProg an ADT with variants Sync/Queue/Signal
+// handle the signal or queue to the channel interpreter depending on the data type
 object Api
 {
-  def send(name: String, thunk: Channel.Thunk)(channel: Channel)
-  : Stream[IO, Unit] =
+  def send(name: String, thunk: Channel.Thunk)(channel: Channel): Stream[IO, Unit] =
     Stream.eval(channel.exchange.in.enqueue1(ChannelProg(name, thunk)))
 
-    def declareExchange(name: String): Channel => Stream[IO, Unit] =
+  def declareExchange(name: String): Channel => Stream[IO, Unit] =
     send(s"declare exchange `$name`", programs.declareExchange(name))
+
+  def bindQueue(exchange: String, queue: String, routingKey: String): Channel => Stream[IO, Unit] =
+    send(s"bind queue `$queue`", programs.bindQueue(exchange, queue, routingKey))
 }
 
-case class ExchangeApi(name: String, channel: Channel)
+case class Queue(name: String, channel: Channel)
+{
+  def bind(exchange: Exchange, routingKey: String): Stream[IO, BoundQueue] =
+    Api.bindQueue(exchange.name, name, routingKey)(channel).as(BoundQueue(exchange, this, routingKey, channel))
+
+  def consume1[A: Decoder]
+  (implicit ec: ExecutionContext)
+  : Stream[IO, Either[String, A]] =
+    for {
+      signal <- Stream.eval(Signal[IO, Option[Either[String, String]]](None))
+       _ <- Api.send(
+         s"consume one from `$name`",
+         programs.consume1(name, signal),
+       )(channel)
+      data <- signal.discrete.collect { case Some(a) => a }.take(1)
+    } yield for {
+      message <- data
+      a <- decode[A](message).leftMap(_.toString)
+    } yield a
+}
+
+case class Exchange(name: String, channel: Channel)
 {
   def publish1[A: Encoder](routingKey: String)(message: A): Stream[IO, Unit] =
     Api.send(
       s"publish to `$name` as `$routingKey`: $message",
-      programs.publish1(name, routingKey, message.asJson.spaces2)
+      programs.publish1(name, routingKey, message.asJson.spaces2),
     )(channel)
 
   def publish[A: Encoder](routingKey: String)(messages: List[A]): Stream[IO, Unit] =
     messages.traverse(publish1(routingKey)).void
+
+  def bind(routingKey: String)(queue: Queue): Stream[IO, BoundQueue] =
+    Api.bindQueue(name, queue.name, routingKey)(channel).as(BoundQueue(this, queue, routingKey, channel))
 }
 
-case class QueueApi(exchange: ExchangeApi, name: String, channel: Channel)
+case class BoundQueue(exchange: Exchange, queue: Queue, routingKey: String, channel: Channel)
+{
+  def consume[A: Decoder]: Stream[IO, Stream[IO, A]] = ???
+}
 
 case class ChannelApi(channel: Channel)
 {
-  def exchange(name: String): Stream[IO, ExchangeApi] =
+  def exchange(name: String): Stream[IO, Exchange] =
     for {
       _ <- Api.send(s"declare exchange `$name`", programs.declareExchange(name))(channel)
-    } yield ExchangeApi(name, channel)
+    } yield Exchange(name, channel)
 
-  def simpleQueue(name: String): Stream[IO, QueueApi] =
+  def queue(name: String): Stream[IO, Queue] =
+    Api.send(s"declare queue `$name`", programs.declareQueue(name))(channel).as(Queue(name, channel))
+
+  def boundQueue(exchangeName: String, queueName: String, routingKey: String): Stream[IO, BoundQueue] =
     for {
-      ex <- exchange(name)
-      _ <- Api.send(s"declare queue `$name`", programs.declareQueue(name))(channel)
-      _ <- Api.send(s"bind queue `$name`", programs.bindQueue(name, name, name))(channel)
-    } yield QueueApi(ex, name, channel)
+      ex <- exchange(exchangeName)
+      q <- queue(queueName)
+      _ <- Api.bindQueue(exchangeName, queueName, routingKey)(channel)
+    } yield BoundQueue(ex, q, routingKey, channel)
+
+  def simpleQueue(name: String): Stream[IO, BoundQueue] =
+    boundQueue(name, name, name)
 }
 
-case class Rabid(queue: Queue[IO, ConsumerRequest])
+case class Rabid(queue: FQueue[IO, ConsumerRequest])
 {
   def channel(implicit ec: ExecutionContext): Stream[IO, ChannelApi] =
     Stream.eval(

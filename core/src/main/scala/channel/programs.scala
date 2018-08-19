@@ -1,7 +1,12 @@
 package rabid
 package channel
 
+import scodec.bits.BitVector
+import scodec.codecs.utf8
 import scodec.codecs.implicits._
+import fs2.async.mutable.Signal
+import cats.effect.IO
+import cats.implicits._
 
 import Field._
 import connection.Communicate
@@ -77,5 +82,20 @@ object programs
       _ <- log(s"publishing to `$exchange` with `$routingKey`")
       _ <- sendMethod(method.basic.publish(exchange, routingKey))
       _ <- sendContent(ClassId.basic.id, data)
+    } yield ActionResult.Continue
+
+  def consume1(queue: String, signal: Signal[IO, Option[Either[String, String]]]): Action.Step[ActionResult] =
+    for {
+      _ <- awaitChannel
+      _ <- log(s"consuming one from `$queue`")
+      _ <- sendMethod(method.basic.get(queue, false))
+      response <- receiveFramePayload[Method.basic.GetResponse]
+       message <- response match {
+         case Method.basic.GetResponse(Right(_)) =>
+           receiveContent.map(a => utf8.decode(BitVector(a)).toEither.map(_.value).leftMap(_.toString))
+         case Method.basic.GetResponse(Left(_)) =>
+           Action.pure(Left("no message available"))
+       }
+       _ <- notifyConsumer(signal, message)
     } yield ActionResult.Continue
 }

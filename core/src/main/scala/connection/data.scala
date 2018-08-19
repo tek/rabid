@@ -41,7 +41,7 @@ object FrameType
   case object Heartbeat
   extends FrameType
   {
-    implicit val Codec_Heartbeat: Codec[Heartbeat.type] = ByteConstant.as(Heartbeat)(4)
+    implicit val Codec_Heartbeat: Codec[Heartbeat.type] = ByteConstant.as(Heartbeat)(8)
   }
 
   implicit val Codec_FrameType: Codec[FrameType] = Codec.coproduct[FrameType].choice
@@ -97,7 +97,7 @@ object Message
     implicit def Codec_ContentHeader: Codec[ContentHeader] =
       (short16 :: short16 :: int64 :: short16).as[ContentHeader]
 
-    def end: Byte = -50.toByte
+    def end: Byte = 206.toByte
 
     def frame(tpe: FrameType, channel: Short, payload: ByteVector): Frame =
       Frame(tpe, channel, payload.size.toInt, payload, end)

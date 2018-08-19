@@ -28,7 +28,7 @@ object ConnectSpec
       _ <- queue.exchange.publish1("cue")(Data(1))
       _ <- queue.exchange.publish1("cue")(Data(2))
       _ <- queue.exchange.publish("cue")(List(Data(3), Data(4)))
-      // a <- queue.consume1[Data]
+      a <- queue.queue.consume1[Data]
     } yield {
       // println(a)
     }

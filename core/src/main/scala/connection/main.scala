@@ -97,6 +97,9 @@ object Action
 
     def either[A](a: Either[Err, A]): Effect[A] =
       EitherT.fromEither[State](a)
+
+    def error(message: String): Effect[Unit] =
+      pull(rabid.Log.pull.error("connection", message))
   }
 
   object State
@@ -195,17 +198,20 @@ object Connection
       }
     }
 
-  def process(interpreter: Action ~> Action.Effect)(data: ConnectionData)
-  : Pull[IO, Nothing, Option[ConnectionData]] = {
-    act(data.state).foldMap(interpretAttempt(interpreter)).value.run(data).map {
-      case (data, Right(result)) =>
-        transition(data.state)(result).map(a => data.copy(state = a))
-      case (_, Left(err)) =>
-        println(s"loop exiting: $err")
-        None
-        // Some(ConnectionState.Disconnected)
-    }
-  }
+  def step(interpreter: Action ~> Action.Effect)(data: ConnectionData)
+  : Action.Pull[(ConnectionData, Either[Err, ActionResult])] =
+    act(data.state).foldMap(interpretAttempt(interpreter)).value.run(data)
+
+  def process(interpreter: Action ~> Action.Effect)(data: ConnectionData): Action.Pull[Option[ConnectionData]] =
+    for {
+      result <- step(interpreter)(data)
+      output <- result match {
+        case (data, Right(result)) =>
+          Pull.pure(transition(data.state)(result).map(a => data.copy(state = a)))
+        case (data, Left(err)) =>
+          Log.pull.error("connection", s"error in connection program: $err").as(Some(data))
+      }
+    } yield output
 
   def run(
     pool: ConnectionData.ChannelPool,

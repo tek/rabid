@@ -7,6 +7,7 @@ import scodec.codecs.utf8
 import cats.data.EitherT
 import cats.effect.IO
 import cats.free.Free
+import fs2.async.mutable.Signal
 
 import connection.Communicate
 
@@ -29,6 +30,12 @@ object Action
   extends Action[Unit]
 
   case class SendContent(classId: Short, payload: ByteVector)
+  extends Action[Unit]
+
+  case object ReceiveContent
+  extends Action[ByteVector]
+
+  case class NotifyConsumer(signal: Signal[IO, Option[Either[String, String]]], data: Either[String, String])
   extends Action[Unit]
 
   case class Log(message: String)
@@ -60,17 +67,17 @@ object Action
   def fromAttempt[A](fa: scodec.Attempt[A]): Step[A] =
     fa match {
       case scodec.Attempt.Successful(a) => Free.pure(a)
-      case scodec.Attempt.Failure(e) => Free.liftF[Action.Attempt, A](scodec.Attempt.Failure(e))
+      case scodec.Attempt.Failure(e) => Free.liftF[Attempt, A](scodec.Attempt.Failure(e))
     }
 
   def decode[A: Decoder](bits: BitVector): Step[DecodeResult[A]] =
-    Action.fromAttempt(Decoder[A].decode(bits))
+    fromAttempt(Decoder[A].decode(bits))
 
   def decodeBytes[A: Decoder](bytes: ByteVector): Step[DecodeResult[A]] =
     decode[A](BitVector(bytes))
 
   def encode[A: Encoder](a: A): Step[BitVector] =
-    Action.fromAttempt(Encoder[A].encode(a))
+    fromAttempt(Encoder[A].encode(a))
 
   def encodeBytes[A: Encoder](a: A): Step[ByteVector] =
     encode(a).map(_.toByteVector)
@@ -124,22 +131,27 @@ object Actions
     for {
       _ <- log(s"sending $method")
       payload <- encodeBytes(ClassMethod(method))
-      _ <- liftF(Action.SendMethod(payload))
+      _ <- liftF(SendMethod(payload))
     } yield ()
 
-  def sendContent(classId: Short, data: String): Action.Step[Unit] =
+  def sendContent(classId: Short, data: String): Step[Unit] =
     for {
       _ <- log("sending content")
-      payload <- Action.fromAttempt(utf8.encode(data))
-      _ <- Action.liftF(Action.SendContent(classId, payload.toByteVector))
+      payload <- fromAttempt(utf8.encode(data))
+      _ <- liftF(SendContent(classId, payload.toByteVector))
     } yield ()
+
+  def notifyConsumer(signal: Signal[IO, Option[Either[String, String]]], data: Either[String, String]): Step[Unit] =
+    liftF(NotifyConsumer(signal, data))
+
+  def receiveContent: Step[ByteVector] = liftF(ReceiveContent)
 
   def awaitConnection: Step[Unit] = liftF(AwaitConnection)
 
   def awaitChannel: Step[Unit] = liftF(AwaitChannel)
 
   def log[A](message: A): Step[Unit] =
-    Action.liftF(Action.Log(message.toString))
+    liftF(Log(message.toString))
 
   def channelCreated: Step[Unit] = liftF(ChannelCreated)
 

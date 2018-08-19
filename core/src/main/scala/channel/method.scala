@@ -59,5 +59,8 @@ object method
   {
     def publish(exchange: String, routingKey: String): Method.basic.Publish =
       Method.basic.Publish(0, ShortString(exchange), ShortString(routingKey), false, false)
+
+    def get(queue: String, ack: Boolean): Method.basic.Get =
+      Method.basic.Get(0, ShortString(queue), !ack)
   }
 }

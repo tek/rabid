@@ -27,8 +27,10 @@ object Interpreter
       case Attempt.Successful(bits) =>
         Action.Effect.eval(client.write(ByteVectorChunk(bits.toByteVector)))
       case Attempt.Failure(error) =>
-        println(s"couldn't encode message $message: $error")
-        EitherT.leftT(error)
+        for {
+          _ <- Action.Effect.error(s"couldn't encode message $message: $error")
+          _ <- EitherT.leftT[Action.State, Unit](error)
+        } yield ()
     }
 
   def channelOutput(channels: ConnectionData.ChannelPool)
@@ -117,22 +119,21 @@ object Interpreter
     client.read(numBytes)
       .map((a: Option[Chunk[Byte]]) => a.map(_.toVector).map(BitVector(_)))
 
-  def receiveAs[A: Decoder](client: tcp.Socket[IO])(numBytes: Int): IO[Option[A]] =
+  def receiveAs[A: Decoder](client: tcp.Socket[IO])(description: String)(numBytes: Int): IO[Option[A]] =
     for {
       response <- receive(client)(numBytes)
-      } yield response match {
+      output <- response match {
         case Some(bits) =>
           Decoder[A].decode(bits) match {
             case Attempt.Successful(DecodeResult(a, _)) =>
-              println(s"decoded rabbit message $a")
-              Some(a)
+              Log.info("connection", s"decoded rabbit message $a").as(Some(a))
             case Attempt.Failure(err) =>
-              println(s"rabbit chunk decoding failed: $err | $bits")
-              None
+              Log.error("connection", s"rabbit chunk decoding failed for `$description`: $err | $bits").as(None)
           }
         case None =>
-          None
+          IO.pure(None)
       }
+    } yield output
 
   def listenChannels(pool: ConnectionData.ChannelPool)
   (implicit ec: ExecutionContext)
@@ -141,8 +142,8 @@ object Interpreter
 
   def receiveFrame(client: tcp.Socket[IO]): OptionT[IO, Communicate] =
     for {
-      header <- OptionT(receiveAs[FrameHeader](client)(7))
-      body <- OptionT(receiveAs[FrameBody](client)(header.size + 8)(FrameBody.codec(header.size)))
+      header <- OptionT(receiveAs[FrameHeader](client)("frame header")(7))
+      body <- OptionT(receiveAs[FrameBody](client)("frame body")(header.size + 1)(FrameBody.codec(header.size)))
     } yield Communicate.Channel(header, body)
 
   def listenRabbitLoop(client: tcp.Socket[IO])(state: Unit): Pull[IO, Communicate, Option[Unit]] =

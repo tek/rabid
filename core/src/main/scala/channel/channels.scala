@@ -11,7 +11,6 @@ import cats.~>
 import cats.syntax.flatMap._
 import cats.data.EitherT
 import cats.effect.IO
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import connection.{Communicate, Exchange, ConsumerResponse}
 
@@ -76,11 +75,7 @@ object Channel
         case Right(a) =>
           Pull.pure(transition(a))
         case Left(err) =>
-          for {
-            logger <- Pull.eval(Slf4jLogger.fromName[IO]("channel"))
-            _ <- Pull.eval(logger.error(s"error in channel program: $err"))
-          } yield None
-          // Some(ActionState.Pristine)
+          Log.pull.error("channel", s"error in channel program: $err").as(None)
       }
     } yield next
   }

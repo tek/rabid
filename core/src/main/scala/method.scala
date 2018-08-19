@@ -160,6 +160,7 @@ object Method
   object channel
   {
     case class Open(outOfBand: ShortString)
+    extends Method
 
     object Open
     {
@@ -174,6 +175,7 @@ object Method
     }
 
     case class OpenOk(channelId: LongString)
+    extends Method
 
     object OpenOk
     {
@@ -201,6 +203,7 @@ object Method
       nowait: Boolean,
       arguments: Table,
     )
+    extends Method
 
     object Declare
     {
@@ -240,6 +243,7 @@ object Method
       nowait: Boolean,
       arguments: Table,
     )
+    extends Method
 
     object Declare
     {
@@ -254,6 +258,7 @@ object Method
     }
 
     case class DeclareOk(queue: ShortString, messageCount: Int, consumerCount: Int)
+    extends Method
 
     object DeclareOk
     {
@@ -275,6 +280,7 @@ object Method
       nowait: Boolean,
       arguments: Table,
     )
+    extends Method
 
     object Bind
     {
@@ -311,6 +317,7 @@ object Method
       mandatory: Boolean,
       immediate: Boolean,
     )
+    extends Method
 
     object Publish
     {
@@ -322,6 +329,69 @@ object Method
 
       implicit val MethodId_Publish: MethodId[Publish] =
         MethodId(40)
+    }
+
+    case class Get(
+      ticket: Short,
+      queue: ShortString,
+      noack: Boolean,
+    )
+    extends Method
+
+    object Get
+    {
+      implicit val codec: Codec[Get] =
+        (short16 :: shortstr :: bool).as[Get]
+
+      implicit val ClassId_Get: ClassId[Get] =
+        ClassId.basic
+
+      implicit val MethodId_Get: MethodId[Get] =
+        MethodId(70)
+    }
+
+    case class GetOk(
+      deliveryTag: Long,
+      redelivered: Bool,
+      exchange: ShortString,
+      routingKey: ShortString,
+      messageCount: Int,
+    )
+    extends Method
+
+    object GetOk
+    {
+      implicit val codec: Codec[GetOk] =
+        (int64 :: boolean :: shortstr :: shortstr :: int32).as[GetOk]
+
+      implicit val ClassId_GetOk: ClassId[GetOk] =
+        ClassId.basic
+
+      implicit val MethodId_GetOk: MethodId[GetOk] =
+        MethodId(71)
+    }
+
+    case class GetEmpty(clusterId: ShortString)
+    extends Method
+
+    object GetEmpty
+    {
+      implicit val codec: Codec[GetEmpty] =
+        shortstr.as[GetEmpty]
+
+      implicit val ClassId_GetEmpty: ClassId[GetEmpty] =
+        ClassId.basic
+
+      implicit val MethodId_GetEmpty: MethodId[GetEmpty] =
+        MethodId(72)
+    }
+
+    case class GetResponse(message: Either[ClassMethod[GetEmpty], ClassMethod[GetOk]])
+
+    object GetResponse
+    {
+      implicit def Codec_GetResponse: Codec[GetResponse] =
+        fallback(Codec[ClassMethod[GetEmpty]], Codec[ClassMethod[GetOk]]).as[GetResponse]
     }
   }
 
