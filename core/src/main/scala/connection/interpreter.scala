@@ -9,7 +9,7 @@ import scala.concurrent.ExecutionContext
 import fs2.{Stream, Chunk, Pull}
 import fs2.io.tcp
 import fs2.interop.scodec.ByteVectorChunk
-import fs2.async.mutable.{Queue, Signal}
+import fs2.async.mutable.Queue
 import scodec.{Encoder, Decoder, Attempt, DecodeResult, Err}
 import scodec.bits.{BitVector}
 import cats.~>
@@ -68,8 +68,7 @@ object Interpreter
   : Action.State[ChannelConnection] = {
     for {
       number <- unusedChannelNumber
-      connected <- Action.State.inspect(_.connected)
-      connection <- Action.State.eval(ChannelConnection.cons(number.toShort, channel, connected))
+      connection <- Action.State.eval(ChannelConnection.cons(number.toShort, channel))
     } yield connection
   }
 
@@ -189,11 +188,6 @@ object Interpreter
             EitherT.liftF(createChannel(channel))
           case Action.ChannelCreated(_, _) =>
             EitherT.pure(())
-          case Action.SetConnected(state) =>
-            for {
-              connected <- EitherT.liftF(Action.State.inspect(_.connected))
-              _ <- Action.Effect.eval(connected.set(state))
-            } yield ()
         }
       }
     }
@@ -204,7 +198,6 @@ object Interpreter
     Connection.ChannelPool,
     Stream[IO, Input],
     Queue[IO, Input],
-    Signal[IO, Boolean],
     Action ~> Action.Effect,
     IO[Unit],
     )] =
@@ -212,12 +205,10 @@ object Interpreter
       client <- tcp.client[IO](new InetSocketAddress(host, port))
       pool <- Stream.eval(Queue.unbounded[IO, Stream[IO, Input]])
       input <- Stream.eval(Queue.unbounded[IO, Input])
-      connected <- Stream.eval(Signal[IO, Boolean](false))
     } yield (
       pool,
       listen(client, pool, input),
       input,
-      connected,
       nativeInterpreter(client),
       client.close,
     )

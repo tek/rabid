@@ -7,7 +7,7 @@ import scala.concurrent.ExecutionContext
 import scala.collection.immutable.SortedMap
 
 import fs2.{Stream, Pull}
-import fs2.async.mutable.{Signal, Queue}
+import fs2.async.mutable.Queue
 import scodec.{Attempt, Err}
 import cats.~>
 import cats.data.{EitherT, StateT, State}
@@ -22,7 +22,6 @@ case class Connection(
   channel0: ChannelConnection,
   channels: SortedMap[Short, ChannelConnection],
   state: ConnectionState,
-  connected: Signal[IO, Boolean],
   buffer: Vector[Input],
 )
 
@@ -33,9 +32,8 @@ object Connection
   def cons(
     pool: Connection.ChannelPool,
     connection0: ChannelConnection,
-    connected: Signal[IO, Boolean],
   ): Connection =
-    Connection(pool, connection0, SortedMap.empty, ConnectionState.Disconnected, connected, Vector.empty)
+    Connection(pool, connection0, SortedMap.empty, ConnectionState.Disconnected, Vector.empty)
 
   def buffer(a: Input): State[Connection, Unit] =
     State.modify(s => s.copy(buffer = s.buffer :+ a))
@@ -155,15 +153,14 @@ object Connection
   def run(
     pool: Connection.ChannelPool,
     interpreter: Action ~> Action.Effect,
-    connected: Signal[IO, Boolean],
     listen: Stream[IO, Input],
   )
   (implicit ec: ExecutionContext)
   : Stream[IO, Unit] =
     for {
       channel0 <- Stream.eval(Channel.cons)
-      connection0 <- Stream.eval(ChannelConnection.cons(0, channel0, connected))
-      a <- listen.through(a => loop(interpreter)(a, Connection.cons(pool, connection0, connected)).stream)
+      connection0 <- Stream.eval(ChannelConnection.cons(0, channel0))
+      a <- listen.through(a => loop(interpreter)(a, Connection.cons(pool, connection0)).stream)
     } yield a
 
   def native
@@ -171,6 +168,6 @@ object Connection
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
   : Stream[IO, (Rabid, Stream[IO, Unit], IO[Unit])] =
     for {
-      (pool, listen, input, connected, interpreter, close) <- Interpreter.native(host, port)
-    } yield (Rabid(input), run(pool, interpreter, connected, listen), close)
+      (pool, listen, input, interpreter, close) <- Interpreter.native(host, port)
+    } yield (Rabid(input), run(pool, interpreter, listen), close)
 }

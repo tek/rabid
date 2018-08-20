@@ -20,9 +20,6 @@ object Action
   type State[A] = StateT[Pull, Connection, A]
   type Effect[A] = EitherT[State, Err, A]
 
-  case class SetConnected(state: Boolean)
-  extends Action[Unit]
-
   case class Send(payload: Message)
   extends Action[Unit]
 

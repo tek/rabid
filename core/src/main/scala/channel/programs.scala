@@ -44,7 +44,6 @@ object programs
 
   def createChannel(number: Short): Action.Step[ActionResult] =
     for {
-      _ <- awaitConnection
       _ <- log(s"creating channel $number")
       _ <- sendMethod(method.channel.open)
       openOk <- receiveMethod[Method.channel.OpenOk]

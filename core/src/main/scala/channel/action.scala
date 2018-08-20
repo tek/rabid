@@ -44,9 +44,6 @@ object Action
   case class Output(comm: Input)
   extends Action[Unit]
 
-  case object AwaitConnection
-  extends Action[Unit]
-
   case object ChannelCreated
   extends Action[Unit]
 
@@ -142,8 +139,6 @@ object Actions
     liftF(NotifyConsumer(signal, data))
 
   def receiveContent: Step[ByteVector] = liftF(ReceiveContent)
-
-  def awaitConnection: Step[Unit] = liftF(AwaitConnection)
 
   def log[A](message: A): Step[Unit] =
     liftF(Log(message.toString))

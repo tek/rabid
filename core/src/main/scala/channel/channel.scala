@@ -23,20 +23,19 @@ case class ChannelConnection(
   progs: Queue[IO, ChannelProg],
   consumerProgs: Queue[IO, ChannelProg],
   receive: Queue[IO, ByteVector],
-  connected: Signal[IO, Boolean],
   created: Signal[IO, Boolean],
 )
 
 object ChannelConnection
 {
-  def cons(number: Short, channel: Channel, connected: Signal[IO, Boolean])
+  def cons(number: Short, channel: Channel)
   (implicit ec: ExecutionContext)
   : IO[ChannelConnection] = {
     for {
       in <- Queue.unbounded[IO, ChannelProg]
       input <- Queue.unbounded[IO, ByteVector]
       created <- Signal[IO, Boolean](false)
-    } yield ChannelConnection(number, in, channel.exchange.in, input, connected, created)
+    } yield ChannelConnection(number, in, channel.exchange.in, input, created)
   }
 }
 
@@ -83,11 +82,11 @@ object Channel
   : Pull[IO, Input, Unit] =
     for {
       element <- input.pull.uncons1
-      a <- element match {
+      _ <- element match {
         case Some((prog, remainder)) => runJob(interpreter)(prog) >> process(interpreter)(remainder)
         case None => Pull.done
       }
-    } yield a
+    } yield ()
 
   def blockedBy[A](signal: Signal[IO, Boolean])(stream: Stream[IO, A])
   (implicit ec: ExecutionContext)

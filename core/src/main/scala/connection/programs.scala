@@ -25,7 +25,6 @@ object programs
 
   def connected: Action.Step[Continuation] =
     for {
-      _ <- Action.liftF(Action.SetConnected(true))
       _ <- Action.liftF(Action.RunInControlChannel(
         ChannelProg("listen in control channel", channel.programs.controlListen)))
     } yield Continuation.Debuffer

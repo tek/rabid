@@ -68,8 +68,6 @@ object Interpreter
             Action.Effect.eval(log(s"channel ${channel.number}", message))
           case Action.Output(comm) =>
             Action.Effect.pull(Pull.output1(comm))
-          case Action.AwaitConnection =>
-            awaitSignal(channel.connected)
           case Action.ChannelCreated =>
             Action.Effect.eval(channel.created.set(true))
         }
