@@ -77,7 +77,7 @@ object Connection
       bufferOnly(a)
   }
 
-  def process1: ConnectionState => Input => State[Connection, Action.Step[Continuation]] = {
+  def execute: ConnectionState => Input => State[Connection, Action.Step[Continuation]] = {
     case ConnectionState.Disconnected =>
       disconnected
     case ConnectionState.Connecting =>
@@ -133,32 +133,24 @@ object Connection
       cont <- continuation(tail)(output)
     } yield cont
 
-  // TODO
-  // call `step` with the incoming `Input`
-  // in `step`, first match on the `ConnectionState`, deciding whether to handle the input or fixing the connection
-  // implement `step` as a pull that finishes when the connection is fine and the element handled or the connection is
-  // terminated
-  def process(interpreter: Action ~> Action.Effect)(input: Stream[IO, Input], data: Connection)
+  def process(interpreter: Action ~> Action.Effect)(data: Connection)
+  : Option[(Input, Stream[IO, Input])] => Action.Pull[Unit] = {
+    case Some((a, tail)) =>
+      val (data1, program) = execute(data.state)(a).run(data).value
+      for {
+        _ <- Log.pull.info("connection", s"received input $a")
+        (data2, continuation) <- interpret(interpreter)(program)(tail).run(data1)
+        _ <- loop(interpreter)(continuation, data2)
+      } yield ()
+    case None => Pull.done
+  }
+
+  def loop(interpreter: Action ~> Action.Effect)(inputs: Stream[IO, Input], data: Connection)
   : Action.Pull[Unit] =
-    input.pull.uncons1.flatMap {
-      case Some((a, tail)) =>
-        val (data1, program) = process1(data.state)(a).run(data).value
-        for {
-          _ <- Log.pull.info("connection", s"received input $a")
-          (data2, continuation) <- interpret(interpreter)(program)(tail).run(data1)
-          _ <- process(interpreter)(continuation, data2)
-        } yield ()
-      case None => Pull.done
-    }
-    // for {
-    //   result <- step(interpreter)(data)
-    //   output <- result match {
-    //     case (data, Right(result)) =>
-    //       Pull.pure(transition(data.state)(result).map(a => data.copy(state = a)))
-    //     case (data, Left(err)) =>
-    //       Log.pull.error("connection", s"error in connection program: $err").as(Some(data))
-    //   }
-    // } yield output
+    for {
+      input <- inputs.pull.uncons1
+      _ <- process(interpreter)(data)(input)
+    } yield ()
 
   def run(
     pool: Connection.ChannelPool,
@@ -171,7 +163,7 @@ object Connection
     for {
       channel0 <- Stream.eval(Channel.cons)
       connection0 <- Stream.eval(ChannelConnection.cons(0, channel0, connected))
-      a <- listen.through(a => process(interpreter)(a, Connection.cons(pool, connection0, connected)).stream)
+      a <- listen.through(a => loop(interpreter)(a, Connection.cons(pool, connection0, connected)).stream)
     } yield a
 
   def native
