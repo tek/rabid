@@ -18,7 +18,7 @@ import cats.effect.IO
 import cats.implicits._
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
-import channel.{ChannelConnection, Channel, ChannelProg, programs}
+import channel.{ChannelConnection, Channel, ChannelProg}
 
 object Interpreter
 {
@@ -103,7 +103,7 @@ object Interpreter
       connection <- consChannel(channel)
       _ <- startChannel(connection)
       _ <- runInChannel(connection)(
-        ChannelProg(s"create channel ${connection.number}", programs.createChannel(connection.number))
+        ChannelProg(s"create channel ${connection.number}", rabid.channel.programs.createChannel(connection.number))
       )
     } yield ()
 
@@ -169,14 +169,12 @@ object Interpreter
       _ <- logger.info(message)
     } yield ()
 
-  def nativeInterpreter(client: tcp.Socket[IO], listen: Queue[IO, Input])
+  def nativeInterpreter(client: tcp.Socket[IO])
   (implicit ec: ExecutionContext)
   : Action ~> Action.Effect =
     new (Action ~> Action.Effect) {
       def apply[A](action: Action[A]): Action.Effect[A] = {
         action match {
-          case Action.Listen =>
-            Action.Effect.eval(listen.dequeue1)
           case Action.Send(message) =>
             send(client)(message)
           case Action.StartControlChannel =>
@@ -204,7 +202,7 @@ object Interpreter
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
   : Stream[IO, (
     Connection.ChannelPool,
-    Stream[IO, Unit],
+    Stream[IO, Input],
     Queue[IO, Input],
     Signal[IO, Boolean],
     Action ~> Action.Effect,
@@ -213,15 +211,14 @@ object Interpreter
     for {
       client <- tcp.client[IO](new InetSocketAddress(host, port))
       pool <- Stream.eval(Queue.unbounded[IO, Stream[IO, Input]])
-      queue <- Stream.eval(Queue.unbounded[IO, Input])
       input <- Stream.eval(Queue.unbounded[IO, Input])
       connected <- Stream.eval(Signal[IO, Boolean](false))
     } yield (
       pool,
-      listen(client, pool, input).to(queue.enqueue),
+      listen(client, pool, input),
       input,
       connected,
-      nativeInterpreter(client, queue),
+      nativeInterpreter(client),
       client.close,
     )
 }

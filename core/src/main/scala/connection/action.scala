@@ -20,9 +20,6 @@ object Action
   type State[A] = StateT[Pull, Connection, A]
   type Effect[A] = EitherT[State, Err, A]
 
-  case object Listen
-  extends Action[Input]
-
   case class SetConnected(state: Boolean)
   extends Action[Unit]
 
@@ -75,6 +72,9 @@ object Action
 
   def log[A](message: A): Step[Unit] =
     Action.liftF(Action.Log(message.toString))
+
+  def unit: Step[Unit] =
+    Free.pure(())
 
   object Effect
   {

@@ -187,12 +187,6 @@ object ConnectionState
 
   case object Connected
   extends ConnectionState
-
-  case object Running
-  extends ConnectionState
-
-  case object Done
-  extends ConnectionState
 }
 
 sealed trait ActionResult
@@ -213,4 +207,18 @@ object ActionResult
 
   case object Started
   extends ActionResult
+}
+
+sealed trait Continuation
+
+object Continuation
+{
+  case object Regular
+  extends Continuation
+
+  case object Debuffer
+  extends Continuation
+
+  case object Exit
+  extends Continuation
 }

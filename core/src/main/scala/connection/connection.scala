@@ -10,12 +10,12 @@ import fs2.{Stream, Pull}
 import fs2.async.mutable.{Signal, Queue}
 import scodec.{Attempt, Err}
 import cats.~>
-import cats.data.{EitherT, StateT}
-import cats.effect.IO
+import cats.data.{EitherT, StateT, State}
 import cats.free.Free
+import cats.effect.IO
 import cats.implicits._
 
-import channel.{ChannelConnection, Channel, ChannelProg, programs}
+import channel.{ChannelConnection, Channel}
 
 case class Connection(
   pool: Connection.ChannelPool,
@@ -23,65 +23,81 @@ case class Connection(
   channels: SortedMap[Short, ChannelConnection],
   state: ConnectionState,
   connected: Signal[IO, Boolean],
+  buffer: Vector[Input],
 )
 
 object Connection
 {
   type ChannelPool = Queue[IO, Stream[IO, Input]]
 
-  def sendToRabbit(message: Message): Action.Step[ActionResult] =
-    Action.liftF(Action.Send(message)).as(ActionResult.Continue)
+  def cons(
+    pool: Connection.ChannelPool,
+    connection0: ChannelConnection,
+    connected: Signal[IO, Boolean],
+  ): Connection =
+    Connection(pool, connection0, SortedMap.empty, ConnectionState.Disconnected, connected, Vector.empty)
 
-  def sendToChannel(header: FrameHeader, body: FrameBody): Action.Step[ActionResult] =
-    Action.liftF(Action.SendToChannel(header, body)).as(ActionResult.Continue)
+  def buffer(a: Input): State[Connection, Unit] =
+    State.modify(s => s.copy(buffer = s.buffer :+ a))
 
-  def consumerRequest(channel: Channel): Action.Step[ActionResult] =
-    Action.liftF(Action.CreateChannel(channel)).as(ActionResult.Continue)
+  def bufferOnly(a: Input): State[Connection, Action.Step[Continuation]] =
+    buffer(a).as(Free.pure(Continuation.Regular))
 
-  def channelCreated(number: Short, id: String): Action.Step[ActionResult] =
-    Action.liftF(Action.ChannelCreated(number, id)).as(ActionResult.Continue)
+  def transition(state: ConnectionState): State[Connection, Unit] =
+    State.modify(s => s.copy(state = state))
 
-  def send: Input => Action.Step[ActionResult] = {
-    case Input.Connected => Free.pure(ActionResult.Connected)
-    case Input.Rabbit(message) => sendToRabbit(message)
-    case Input.SendToChannel(header, body) => sendToChannel(header, body)
-    case Input.CreateChannel(request) => consumerRequest(request)
-    case Input.ChannelCreated(number, id) => channelCreated(number, id)
+  def operation: Input => Action.Step[Continuation] = {
+    case Input.Connected =>
+      Free.pure(Continuation.Regular)
+    case Input.Rabbit(message) =>
+      programs.sendToRabbit(message)
+    case Input.SendToChannel(header, body) =>
+      programs.sendToChannel(header, body)
+    case Input.CreateChannel(request) =>
+      programs.createChannel(request)
+    case Input.ChannelCreated(number, id) =>
+      programs.channelCreated(number, id)
   }
 
-  def listen: Action.Step[ActionResult] =
-    for {
-      comm <- Action.liftF(Action.Listen)
-      result <- send(comm)
-    } yield result
-
-  def exit: Action.Step[ActionResult] =
-    Free.pure(ActionResult.Done)
-
-  def connected: Action.Step[ActionResult] =
-    for {
-      _ <- Action.liftF(Action.SetConnected(true))
-      _ <- Action.liftF(Action.RunInControlChannel(ChannelProg("listen in control channel", programs.controlListen)))
-    } yield ActionResult.Running
-
-  def act: ConnectionState => Action.Step[ActionResult] = {
-    case ConnectionState.Disconnected =>
+  def disconnected(input: Input): State[Connection, Action.Step[Continuation]] =
       for {
-        _ <- Action.liftF(Action.StartControlChannel)
-        _ <- Action.liftF(Action.RunInControlChannel(ChannelProg("connect to server", programs.connect)))
-      } yield ActionResult.Started
-    case ConnectionState.Connecting => listen
-    case ConnectionState.Connected => connected
-    case ConnectionState.Running => listen
-    case ConnectionState.Done => exit
+        _ <- buffer(input)
+        _ <- transition(ConnectionState.Connecting)
+      } yield programs.connect
+
+  def connecting: Input => State[Connection, Action.Step[Continuation]] = {
+    case Input.Connected =>
+      transition(ConnectionState.Connected).as(programs.connected)
+    case input @ Input.Rabbit(_) =>
+      State.pure(operation(input))
+    case input @ Input.SendToChannel(header, _) if header.channel == 0 =>
+      State.pure(operation(input))
+    case a =>
+      println(s"received $a in connecting state")
+      bufferOnly(a)
   }
 
-  def transition(state: ConnectionState): ActionResult => Option[ConnectionState] = {
-    case ActionResult.Started => Some(ConnectionState.Connecting)
-    case ActionResult.Connected => Some(ConnectionState.Connected)
-    case ActionResult.Running => Some(ConnectionState.Running)
-    case ActionResult.Continue => Some(state)
-    case ActionResult.Done => None
+  def process1: ConnectionState => Input => State[Connection, Action.Step[Continuation]] = {
+    case ConnectionState.Disconnected =>
+      disconnected
+    case ConnectionState.Connecting =>
+      connecting
+    case ConnectionState.Connected =>
+      operation.andThen(State.pure)
+  }
+
+  def debuffer: Action.State[Vector[Input]] = {
+    for {
+      buffered <- Action.State.inspect(_.buffer)
+      _ <- {
+        if (buffered.isEmpty) Action.State.pure(())
+        else
+          for {
+            _ <- Action.State.modify(_.copy(buffer = Vector.empty))
+            _ <- Action.State.pull(Log.pull.info("connection", s"rebuffering inputs $buffered"))
+          } yield ()
+      }
+    } yield buffered
   }
 
   def interpretAttempt(inner: Action ~> Action.Effect): Action.Attempt ~> Action.Effect =
@@ -94,42 +110,75 @@ object Connection
       }
     }
 
-  def step(interpreter: Action ~> Action.Effect)(data: Connection)
-  : Action.Pull[(Connection, Either[Err, ActionResult])] =
-    act(data.state).foldMap(interpretAttempt(interpreter)).value.run(data)
+  def continuation(tail: Stream[IO, Input]): Either[Err, Continuation] => Action.State[Stream[IO, Input]] = {
+    case Right(Continuation.Regular) =>
+      Action.State.pure(tail)
+    case Right(Continuation.Debuffer) =>
+      for {
+        debuffered <- debuffer
+      } yield Stream.emits(debuffered) ++ tail
+    case Right(Continuation.Exit) =>
+      Action.State.pure(Stream.empty)
+    case Left(err) =>
+      Action.State.pull(Log.pull.error("connection", s"error in connection program: $err")).as(tail)
+  }
 
-  def process(interpreter: Action ~> Action.Effect)(data: Connection): Action.Pull[Option[Connection]] =
+  def interpret
+  (interpreter: Action ~> Action.Effect)
+  (program: Action.Step[Continuation])
+  (tail: Stream[IO, Input])
+  : Action.State[Stream[IO, Input]] =
     for {
-      result <- step(interpreter)(data)
-      output <- result match {
-        case (data, Right(result)) =>
-          Pull.pure(transition(data.state)(result).map(a => data.copy(state = a)))
-        case (data, Left(err)) =>
-          Log.pull.error("connection", s"error in connection program: $err").as(Some(data))
-      }
-    } yield output
+      output <- program.foldMap(interpretAttempt(interpreter)).value
+      cont <- continuation(tail)(output)
+    } yield cont
+
+  // TODO
+  // call `step` with the incoming `Input`
+  // in `step`, first match on the `ConnectionState`, deciding whether to handle the input or fixing the connection
+  // implement `step` as a pull that finishes when the connection is fine and the element handled or the connection is
+  // terminated
+  def process(interpreter: Action ~> Action.Effect)(input: Stream[IO, Input], data: Connection)
+  : Action.Pull[Unit] =
+    input.pull.uncons1.flatMap {
+      case Some((a, tail)) =>
+        val (data1, program) = process1(data.state)(a).run(data).value
+        for {
+          _ <- Log.pull.info("connection", s"received input $a")
+          (data2, continuation) <- interpret(interpreter)(program)(tail).run(data1)
+          _ <- process(interpreter)(continuation, data2)
+        } yield ()
+      case None => Pull.done
+    }
+    // for {
+    //   result <- step(interpreter)(data)
+    //   output <- result match {
+    //     case (data, Right(result)) =>
+    //       Pull.pure(transition(data.state)(result).map(a => data.copy(state = a)))
+    //     case (data, Left(err)) =>
+    //       Log.pull.error("connection", s"error in connection program: $err").as(Some(data))
+    //   }
+    // } yield output
 
   def run(
     pool: Connection.ChannelPool,
     interpreter: Action ~> Action.Effect,
     connected: Signal[IO, Boolean],
+    listen: Stream[IO, Input],
   )
   (implicit ec: ExecutionContext)
   : Stream[IO, Unit] =
     for {
       channel0 <- Stream.eval(Channel.cons)
       connection0 <- Stream.eval(ChannelConnection.cons(0, channel0, connected))
-      _ <- Pull.loop(
-        process(interpreter))(
-          Connection(pool, connection0, SortedMap.empty, ConnectionState.Disconnected, connected)
-      ).stream
-    } yield ()
+      a <- listen.through(a => process(interpreter)(a, Connection.cons(pool, connection0, connected)).stream)
+    } yield a
 
   def native
   (host: String, port: Int)
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
   : Stream[IO, (Rabid, Stream[IO, Unit], IO[Unit])] =
     for {
-      (pool, listener, input, connected, interpreter, close) <- Interpreter.native(host, port)
-    } yield (Rabid(input), run(pool, interpreter, connected).merge(listener.drain), close)
+      (pool, listen, input, connected, interpreter, close) <- Interpreter.native(host, port)
+    } yield (Rabid(input), run(pool, interpreter, connected, listen), close)
 }
