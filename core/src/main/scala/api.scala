@@ -13,14 +13,14 @@ import io.circe.syntax._
 import io.circe.parser._
 
 import connection.{Connection, Input}
-import channel.{Channel, ChannelProg, programs}
+import channel.{Channel, ChannelInput, programs}
 
-// in order to remove the Signal from the consume programs, make ChannelProg an ADT with variants Sync/Queue/Signal
+// in order to remove the Signal from the consume programs, make ChannelInput an ADT with variants Sync/Queue/Signal
 // handle the signal or queue to the channel interpreter depending on the data type
 object Api
 {
   def send(name: String, thunk: Channel.Thunk)(channel: Channel): Stream[IO, Unit] =
-    Stream.eval(channel.exchange.in.enqueue1(ChannelProg(name, thunk)))
+    Stream.eval(channel.exchange.in.enqueue1(ChannelInput.Prog(name, thunk)))
 
   def declareExchange(name: String): Channel => Stream[IO, Unit] =
     send(s"declare exchange `$name`", programs.declareExchange(name))
@@ -74,7 +74,7 @@ case class ChannelApi(channel: Channel)
 {
   def exchange(name: String): Stream[IO, Exchange] =
     for {
-      _ <- Api.send(s"declare exchange `$name`", programs.declareExchange(name))(channel)
+      _ <- Api.declareExchange(name)(channel)
     } yield Exchange(name, channel)
 
   def queue(name: String): Stream[IO, Queue] =
@@ -97,7 +97,7 @@ case class Rabid(queue: FQueue[IO, Input])
     Stream.eval(
       for {
         channel <- Channel.cons
-        _ <- queue.enqueue1(Input.CreateChannel(channel))
+        _ <- queue.enqueue1(Input.OpenChannel(channel))
       } yield ChannelApi(channel)
     )
 }

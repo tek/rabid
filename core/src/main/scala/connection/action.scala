@@ -8,7 +8,7 @@ import cats.data.{EitherT, StateT}
 import cats.effect.IO
 import cats.free.Free
 
-import channel.{Channel, ChannelProg}
+import channel.{Channel, ChannelInput}
 
 sealed trait Action[A]
 
@@ -26,16 +26,19 @@ object Action
   case object StartControlChannel
   extends Action[Unit]
 
-  case class RunInControlChannel(action: ChannelProg)
+  case class RunInControlChannel(action: ChannelInput.Prog)
   extends Action[Unit]
 
-  case class SendToChannel(header: FrameHeader, body: FrameBody)
+  case class ChannelReceive(header: FrameHeader, body: FrameBody)
   extends Action[Unit]
 
-  case class CreateChannel(channel: Channel)
+  case class NotifyChannel(number: Short, input: ChannelInput)
   extends Action[Unit]
 
-  case class ChannelCreated(number: Short, id: String)
+  case class OpenChannel(channel: Channel)
+  extends Action[Unit]
+
+  case class ChannelOpened(number: Short, id: String)
   extends Action[Unit]
 
   case class Log(message: String)
@@ -77,6 +80,9 @@ object Action
   {
     def pure[A](a: A): Effect[A] =
       EitherT.liftF(StateT.liftF(Pull.pure(a)))
+
+    def unit: Effect[Unit] =
+      pure(())
 
     def pull[A](p: Pull[A]): Effect[A] =
       EitherT.liftF(StateT.liftF(p))

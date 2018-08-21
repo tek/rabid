@@ -49,29 +49,28 @@ object Connection
       Free.pure(Continuation.Regular)
     case Input.Rabbit(message) =>
       programs.sendToRabbit(message)
-    case Input.SendToChannel(header, body) =>
+    case Input.ChannelReceive(header, body) =>
       programs.sendToChannel(header, body)
-    case Input.CreateChannel(request) =>
+    case Input.OpenChannel(request) =>
       programs.createChannel(request)
-    case Input.ChannelCreated(number, id) =>
-      programs.channelCreated(number, id)
+    case Input.ChannelOpened(number, id) =>
+      programs.channelOpened(number, id)
   }
 
   def disconnected(input: Input): State[Connection, Action.Step[Continuation]] =
-      for {
-        _ <- buffer(input)
-        _ <- transition(ConnectionState.Connecting)
-      } yield programs.connect
+    for {
+      _ <- buffer(input)
+      _ <- transition(ConnectionState.Connecting)
+    } yield programs.connect
 
   def connecting: Input => State[Connection, Action.Step[Continuation]] = {
     case Input.Connected =>
       transition(ConnectionState.Connected).as(programs.connected)
     case input @ Input.Rabbit(_) =>
       State.pure(operation(input))
-    case input @ Input.SendToChannel(header, _) if header.channel == 0 =>
+    case input @ Input.ChannelReceive(header, _) if header.channel == 0 =>
       State.pure(operation(input))
     case a =>
-      println(s"received $a in connecting state")
       bufferOnly(a)
   }
 

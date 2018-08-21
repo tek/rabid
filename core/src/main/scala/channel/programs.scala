@@ -9,12 +9,12 @@ import cats.effect.IO
 import cats.implicits._
 
 import Field._
-import connection.Input
+import connection.{Input, Continuation}
 import Actions._
 
 object programs
 {
-  def connect: Action.Step[ActionResult] =
+  def connect: Action.Step[Continuation] =
     for {
       _ <- sendAmqpHeader
       start <- receiveMethod[Method.connection.Start]
@@ -24,62 +24,62 @@ object programs
       _ <- sendMethod(method.connection.open)
       openOk <- receiveMethod[Method.connection.OpenOk]
       _ <- Action.liftF(Action.Output(Input.Connected))
-    } yield ActionResult.Continue
+    } yield Continuation.Debuffer
 
-  def serverClose(code: Short, text: String, classId: Short, methodId: Short): Action.Step[ActionResult] =
+  def serverClose(code: Short, text: String, classId: Short, methodId: Short): Action.Step[Continuation] =
     for {
       _ <- log(s"server closed the connection after method $classId/$methodId with $code: $text")
-    } yield ActionResult.Done
+    } yield Continuation.Exit
 
-  def controlListen: Action.Step[ActionResult] =
+  def controlListen: Action.Step[Continuation] =
     for {
       method <- receiveFramePayload[Method]
       _ <- log(s"control received $method")
       output <- method match {
         case Method.connection.Close(code, text, c, m) =>
           serverClose(code, text.data, c, m)
-        case _ => Action.pure(ActionResult.Continue)
+        case _ => Action.pure(Continuation.Regular)
       }
     } yield output
 
-  def createChannel(number: Short): Action.Step[ActionResult] =
+  def createChannel(number: Short): Action.Step[Continuation] =
     for {
       _ <- log(s"creating channel $number")
       _ <- sendMethod(method.channel.open)
       openOk <- receiveMethod[Method.channel.OpenOk]
-      _ <- channelCreated
-      _ <- output(Input.ChannelCreated(number, openOk.channelId.data))
-    } yield ActionResult.Continue
+      _ <- channelOpened
+      _ <- output(Input.ChannelOpened(number, openOk.channelId.data))
+    } yield Continuation.Regular
 
-  def declareExchange(name: String): Action.Step[ActionResult] =
+  def declareExchange(name: String): Action.Step[Continuation] =
     for {
       _ <- log(s"declaring exchange `$name`")
       _ <- sendMethod(method.exchange.declare(name))
       _ <- receiveMethod[Method.exchange.DeclareOk.type]
-    } yield ActionResult.Continue
+    } yield Continuation.Regular
 
-  def declareQueue(name: String): Action.Step[ActionResult] =
+  def declareQueue(name: String): Action.Step[Continuation] =
     for {
       _ <- log(s"declaring queue `$name`")
       _ <- sendMethod(method.queue.declare(name))
       _ <- receiveMethod[Method.queue.DeclareOk]
-    } yield ActionResult.Continue
+    } yield Continuation.Regular
 
-  def bindQueue(exchange: String, name: String, routingKey: String): Action.Step[ActionResult] =
+  def bindQueue(exchange: String, name: String, routingKey: String): Action.Step[Continuation] =
     for {
       _ <- log(s"binding queue `$name` to `$exchange`")
       _ <- sendMethod(method.queue.bind(exchange, name, routingKey))
       _ <- receiveMethod[Method.queue.BindOk.type]
-    } yield ActionResult.Continue
+    } yield Continuation.Regular
 
-  def publish1(exchange: String, routingKey: String, data: String): Action.Step[ActionResult] =
+  def publish1(exchange: String, routingKey: String, data: String): Action.Step[Continuation] =
     for {
       _ <- log(s"publishing to `$exchange` with `$routingKey`")
       _ <- sendMethod(method.basic.publish(exchange, routingKey))
       _ <- sendContent(ClassId.basic.id, data)
-    } yield ActionResult.Continue
+    } yield Continuation.Regular
 
-  def consume1(queue: String, signal: Signal[IO, Option[Either[String, String]]]): Action.Step[ActionResult] =
+  def consume1(queue: String, signal: Signal[IO, Option[Either[String, String]]]): Action.Step[Continuation] =
     for {
       _ <- log(s"consuming one from `$queue`")
       _ <- sendMethod(method.basic.get(queue, false))
@@ -91,5 +91,5 @@ object programs
            Action.pure(Left("no message available"))
        }
        _ <- notifyConsumer(signal, message)
-    } yield ActionResult.Continue
+    } yield Continuation.Regular
 }

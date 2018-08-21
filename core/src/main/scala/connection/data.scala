@@ -165,13 +165,13 @@ object Input
   case class Rabbit(message: Message)
   extends Input
 
-  case class SendToChannel(header: FrameHeader, body: FrameBody)
+  case class ChannelReceive(header: FrameHeader, body: FrameBody)
   extends Input
 
-  case class CreateChannel(channel: Channel)
+  case class OpenChannel(channel: Channel)
   extends Input
 
-  case class ChannelCreated(number: Short, id: String)
+  case class ChannelOpened(number: Short, id: String)
   extends Input
 }
 

@@ -4,7 +4,7 @@ package connection
 import cats.free.Free
 import cats.implicits._
 
-import channel.{Channel, ChannelProg}
+import channel.{Channel, ChannelInput}
 
 object programs
 {
@@ -12,13 +12,16 @@ object programs
     Action.liftF(Action.Send(message)).as(Continuation.Regular)
 
   def sendToChannel(header: FrameHeader, body: FrameBody): Action.Step[Continuation] =
-    Action.liftF(Action.SendToChannel(header, body)).as(Continuation.Regular)
+    Action.liftF(Action.ChannelReceive(header, body)).as(Continuation.Regular)
 
   def createChannel(channel: Channel): Action.Step[Continuation] =
-    Action.liftF(Action.CreateChannel(channel)).as(Continuation.Regular)
+    Action.liftF(Action.OpenChannel(channel)).as(Continuation.Regular)
 
-  def channelCreated(number: Short, id: String): Action.Step[Continuation] =
-    Action.liftF(Action.ChannelCreated(number, id)).as(Continuation.Regular)
+  def channelOpened(number: Short, id: String): Action.Step[Continuation] =
+    for {
+      _ <- Action.liftF(Action.NotifyChannel(number, ChannelInput.Opened))
+      _ <- Action.liftF(Action.ChannelOpened(number, id))
+    } yield Continuation.Regular
 
   def exit: Action.Step[Continuation] =
     Free.pure(Continuation.Exit)
@@ -26,12 +29,12 @@ object programs
   def connected: Action.Step[Continuation] =
     for {
       _ <- Action.liftF(Action.RunInControlChannel(
-        ChannelProg("listen in control channel", channel.programs.controlListen)))
+        ChannelInput.Prog("listen in control channel", channel.programs.controlListen)))
     } yield Continuation.Debuffer
 
   def connect: Action.Step[Continuation] =
     for {
       _ <- Action.liftF(Action.StartControlChannel)
-      _ <- Action.liftF(Action.RunInControlChannel(ChannelProg("connect to server", channel.programs.connect)))
+      _ <- Action.liftF(Action.RunInControlChannel(ChannelInput.Prog("connect to server", channel.programs.connect)))
     } yield Continuation.Regular
 }

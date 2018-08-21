@@ -4,9 +4,10 @@ package channel
 import scodec.{Encoder, Decoder, DecodeResult, Codec, Err}
 import scodec.bits.{ByteVector, BitVector}
 import scodec.codecs.utf8
-import cats.data.EitherT
+import cats.data.{EitherT, StateT}
 import cats.effect.IO
 import cats.free.Free
+import fs2.Pull
 import fs2.async.mutable.Signal
 
 import connection.Input
@@ -18,6 +19,7 @@ object Action
   type Attempt[A] = scodec.Attempt[Action[A]]
   type Step[A] = Free[Attempt, A]
   type Pull[A] = fs2.Pull[IO, Input, A]
+  type State[A] = StateT[Pull, ChannelData, A]
   type Effect[A] = EitherT[Pull, Err, A]
 
   case object SendAmqpHeader
@@ -44,7 +46,7 @@ object Action
   case class Output(comm: Input)
   extends Action[Unit]
 
-  case object ChannelCreated
+  case object ChannelOpened
   extends Action[Unit]
 
   def liftF[A](a: Action[A]): Step[A] =
@@ -78,6 +80,12 @@ object Action
 
   object Effect
   {
+    def pure[A](a: A): Effect[A] =
+      EitherT.liftF(Pull.pure(a))
+
+    def unit: Effect[Unit] =
+      pure(())
+
     def pull[A](p: Pull[A]): Effect[A] =
       EitherT.liftF(p)
 
@@ -89,6 +97,24 @@ object Action
 
     def attempt[A](a: scodec.Attempt[A]): Effect[A] =
       either(a.toEither)
+  }
+
+  object State
+  {
+    def pure[A](a: A): State[A] =
+      StateT.liftF(Pull.pure(a))
+
+    def inspect[A](f: ChannelData => A): State[A] =
+      StateT.inspect(f)
+
+    def modify(f: ChannelData => ChannelData): State[Unit] =
+      StateT.modify(f)
+
+    def pull[A](p: Pull[A]): State[A] =
+      StateT.liftF(p)
+
+    def eval[A](fa: IO[A]): State[A] =
+      pull(fs2.Pull.eval(fa))
   }
 }
 
@@ -143,7 +169,7 @@ object Actions
   def log[A](message: A): Step[Unit] =
     liftF(Log(message.toString))
 
-  def channelCreated: Step[Unit] = liftF(ChannelCreated)
+  def channelOpened: Step[Unit] = liftF(ChannelOpened)
 
   def output(comm: Input): Step[Unit] = liftF(Output(comm))
 }
