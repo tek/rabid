@@ -34,7 +34,7 @@ object Connection
   ): Connection =
     Connection(pool, channelConnection0, SortedMap.empty, ConnectionState.Disconnected, Vector.empty)
 
-  def operation: Input => Action.Step[PNext] = {
+  def operation: Input => ConnectionA.Step[PNext] = {
     case Input.Connected =>
       Free.pure(PNext.Regular)
     case Input.Rabbit(message) =>
@@ -47,13 +47,13 @@ object Connection
       programs.channelOpened(number, id)
   }
 
-  def disconnected(input: Input): State[ProcessData[Input], Action.Step[PNext]] =
+  def disconnected(input: Input): State[ProcessData[Input], ConnectionA.Step[PNext]] =
     for {
       _ <- Process.buffer(input)
       _ <- Process.transition(PState.Connecting)
     } yield programs.connect
 
-  def connecting: Input => State[ProcessData[Input], Action.Step[PNext]] = {
+  def connecting: Input => State[ProcessData[Input], ConnectionA.Step[PNext]] = {
     case Input.Connected =>
       Process.transition[Input](PState.Connected).as(programs.connected)
     case input @ Input.Rabbit(_) =>
@@ -64,7 +64,7 @@ object Connection
       Process.bufferOnly(a)
   }
 
-  def execute: PState => Input => State[ProcessData[Input], Action.Step[PNext]] = {
+  def execute: PState => Input => State[ProcessData[Input], ConnectionA.Step[PNext]] = {
     case PState.Disconnected =>
       disconnected
     case PState.Connecting =>
@@ -75,7 +75,7 @@ object Connection
 
   def run(
     pool: Connection.ChannelPool,
-    interpreter: Action ~> Action.Effect,
+    interpreter: ConnectionA ~> ConnectionA.Effect,
     listen: Stream[IO, Input],
   )
   (implicit ec: ExecutionContext)

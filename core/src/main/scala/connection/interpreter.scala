@@ -22,14 +22,14 @@ import channel.{ChannelConnection, Channel, ChannelInput}
 
 object Interpreter
 {
-  def send(client: tcp.Socket[IO])(message: Message): Action.Effect[Unit] =
+  def send(client: tcp.Socket[IO])(message: Message): ConnectionA.Effect[Unit] =
     Encoder.encode(message) match {
       case Attempt.Successful(bits) =>
-        Action.Effect.eval(client.write(ByteVectorChunk(bits.toByteVector)))
+        ConnectionA.Effect.eval(client.write(ByteVectorChunk(bits.toByteVector)))
       case Attempt.Failure(error) =>
         for {
-          _ <- Action.Effect.error(s"couldn't encode message $message: $error")
-          _ <- EitherT.leftT[Action.State, Unit](error)
+          _ <- ConnectionA.Effect.error(s"couldn't encode message $message: $error")
+          _ <- EitherT.leftT[ConnectionA.State, Unit](error)
         } yield ()
     }
 
@@ -40,80 +40,80 @@ object Interpreter
 
   def startChannel(connection: ChannelConnection)
   (channel: Stream[IO, Input])
-  : Action.State[Unit] =
+  : ConnectionA.State[Unit] =
     for {
-      pool <- Action.State.inspect(_.pool)
-      _ <- Action.State.eval(pool.enqueue1(channel))
-      _ <- Action.State.modify(data => data.copy(channels = data.channels.updated(connection.number, connection)))
+      pool <- ConnectionA.State.inspect(_.pool)
+      _ <- ConnectionA.State.eval(pool.enqueue1(channel))
+      _ <- ConnectionA.State.modify(data => data.copy(channels = data.channels.updated(connection.number, connection)))
     } yield ()
 
   def startControlChannel
   (implicit ec: ExecutionContext)
-  : Action.State[Unit] =
+  : ConnectionA.State[Unit] =
     for {
-      connection <- Action.State.inspect(_.channel0)
+      connection <- ConnectionA.State.inspect(_.channel0)
       _ <- startChannel(connection)(Channel.runControl(connection))
     } yield ()
 
   def smallestUnused(numbers: Iterable[Short]): Int =
     numbers.foldLeft(1)((z, a) => if (z < a) z else a + 1)
 
-  def unusedChannelNumber: Action.State[Short] =
+  def unusedChannelNumber: ConnectionA.State[Short] =
     for {
-      numbers <- Action.State.inspect(_.channels.keys)
+      numbers <- ConnectionA.State.inspect(_.channels.keys)
     } yield smallestUnused(numbers).toShort
 
   def consChannel(channel: Channel)
   (implicit ec: ExecutionContext)
-  : Action.State[ChannelConnection] =
+  : ConnectionA.State[ChannelConnection] =
     for {
       number <- unusedChannelNumber
-      connection <- Action.State.eval(ChannelConnection.cons(number.toShort, channel))
+      connection <- ConnectionA.State.eval(ChannelConnection.cons(number.toShort, channel))
     } yield connection
 
-  def channelConnection(number: Short): Action.Effect[ChannelConnection] =
+  def channelConnection(number: Short): ConnectionA.Effect[ChannelConnection] =
     for {
-      stored <- EitherT.liftF(Action.State.inspect(_.channels.get(number)))
+      stored <- EitherT.liftF(ConnectionA.State.inspect(_.channels.get(number)))
       connection <- stored match {
-        case Some(channel) => Action.Effect.pure(channel)
+        case Some(channel) => ConnectionA.Effect.pure(channel)
         case None =>
-          Action.Effect.either(Left(Err.General(s"no such channel: $number", Nil)))
+          ConnectionA.Effect.either(Left(Err.General(s"no such channel: $number", Nil)))
       }
     } yield connection
 
   def runInChannel(channel: ChannelConnection)(thunk: ChannelInput.Prog)
-  : Action.State[Unit] =
-    Action.State.eval(channel.progs.enqueue1(thunk))
+  : ConnectionA.State[Unit] =
+    ConnectionA.State.eval(channel.progs.enqueue1(thunk))
 
   def runInControlChannel(thunk: ChannelInput.Prog)
-  : Action.State[Unit] =
+  : ConnectionA.State[Unit] =
     for {
-      _ <- Action.State.eval(log("running job in control channel"))
-      channel <- Action.State.inspect(_.channel0)
-      _ <- Action.State.eval(channel.progs.enqueue1(thunk))
+      _ <- ConnectionA.State.eval(log("running job in control channel"))
+      channel <- ConnectionA.State.inspect(_.channel0)
+      _ <- ConnectionA.State.eval(channel.progs.enqueue1(thunk))
     } yield ()
 
   def createChannel(channel: Channel)
   (implicit ec: ExecutionContext)
-  : Action.State[Unit] =
+  : ConnectionA.State[Unit] =
     for {
       connection <- consChannel(channel)
       _ <- startChannel(connection)(Channel.run(connection))
     } yield ()
 
   def sendToChannel(header: FrameHeader, body: FrameBody)
-  : Action.Effect[Unit] =
+  : ConnectionA.Effect[Unit] =
     for {
       connection <- channelConnection(header.channel)
-      _ <- Action.Effect.eval(log(s"sending to channel ${connection.number}"))
-      _ <- Action.Effect.eval(connection.receive.enqueue1(body.payload))
+      _ <- ConnectionA.Effect.eval(log(s"sending to channel ${connection.number}"))
+      _ <- ConnectionA.Effect.eval(connection.receive.enqueue1(body.payload))
     } yield ()
 
   def notifyChannel(number: Short, input: ChannelInput)
-  : Action.Effect[Unit] =
+  : ConnectionA.Effect[Unit] =
     for {
       connection <- channelConnection(number)
-      _ <- Action.Effect.eval(connection.progs.enqueue1(input))
+      _ <- ConnectionA.Effect.eval(connection.progs.enqueue1(input))
     } yield ()
 
   def receive(client: tcp.Socket[IO])(numBytes: Int): IO[Option[BitVector]] =
@@ -172,25 +172,25 @@ object Interpreter
 
   def nativeInterpreter(client: tcp.Socket[IO])
   (implicit ec: ExecutionContext)
-  : Action ~> Action.Effect =
-    new (Action ~> Action.Effect) {
-      def apply[A](action: Action[A]): Action.Effect[A] = {
+  : ConnectionA ~> ConnectionA.Effect =
+    new (ConnectionA ~> ConnectionA.Effect) {
+      def apply[A](action: ConnectionA[A]): ConnectionA.Effect[A] = {
         action match {
-          case Action.Send(message) =>
+          case ConnectionA.Send(message) =>
             send(client)(message)
-          case Action.StartControlChannel =>
+          case ConnectionA.StartControlChannel =>
             EitherT.liftF(startControlChannel)
-          case Action.RunInControlChannel(thunk) =>
+          case ConnectionA.RunInControlChannel(thunk) =>
             EitherT.liftF(runInControlChannel(thunk))
-          case Action.ChannelReceive(header, body) =>
+          case ConnectionA.ChannelReceive(header, body) =>
             sendToChannel(header, body)
-          case Action.NotifyChannel(number, input) =>
+          case ConnectionA.NotifyChannel(number, input) =>
             notifyChannel(number, input)
-          case Action.Log(message) =>
-            Action.Effect.eval(log(message))
-          case Action.OpenChannel(channel) =>
+          case ConnectionA.Log(message) =>
+            ConnectionA.Effect.eval(log(message))
+          case ConnectionA.OpenChannel(channel) =>
             EitherT.liftF(createChannel(channel))
-          case Action.ChannelOpened(_, _) =>
+          case ConnectionA.ChannelOpened(_, _) =>
             EitherT.pure(())
         }
       }
@@ -202,7 +202,7 @@ object Interpreter
     Connection.ChannelPool,
     Stream[IO, Input],
     Queue[IO, Input],
-    Action ~> Action.Effect,
+    ConnectionA ~> ConnectionA.Effect,
     IO[Unit],
     )] =
     for {

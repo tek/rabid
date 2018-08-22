@@ -8,33 +8,33 @@ import channel.{Channel, ChannelInput}
 
 object programs
 {
-  def sendToRabbit(message: Message): Action.Step[PNext] =
-    Action.liftF(Action.Send(message)).as(PNext.Regular)
+  def sendToRabbit(message: Message): ConnectionA.Step[PNext] =
+    ConnectionA.liftF(ConnectionA.Send(message)).as(PNext.Regular)
 
-  def sendToChannel(header: FrameHeader, body: FrameBody): Action.Step[PNext] =
-    Action.liftF(Action.ChannelReceive(header, body)).as(PNext.Regular)
+  def sendToChannel(header: FrameHeader, body: FrameBody): ConnectionA.Step[PNext] =
+    ConnectionA.liftF(ConnectionA.ChannelReceive(header, body)).as(PNext.Regular)
 
-  def createChannel(channel: Channel): Action.Step[PNext] =
-    Action.liftF(Action.OpenChannel(channel)).as(PNext.Regular)
+  def createChannel(channel: Channel): ConnectionA.Step[PNext] =
+    ConnectionA.liftF(ConnectionA.OpenChannel(channel)).as(PNext.Regular)
 
-  def channelOpened(number: Short, id: String): Action.Step[PNext] =
+  def channelOpened(number: Short, id: String): ConnectionA.Step[PNext] =
     for {
-      _ <- Action.liftF(Action.NotifyChannel(number, ChannelInput.Opened))
-      _ <- Action.liftF(Action.ChannelOpened(number, id))
+      _ <- ConnectionA.liftF(ConnectionA.NotifyChannel(number, ChannelInput.Opened))
+      _ <- ConnectionA.liftF(ConnectionA.ChannelOpened(number, id))
     } yield PNext.Regular
 
-  def exit: Action.Step[PNext] =
+  def exit: ConnectionA.Step[PNext] =
     Free.pure(PNext.Exit)
 
-  def connected: Action.Step[PNext] =
+  def connected: ConnectionA.Step[PNext] =
     for {
-      _ <- Action.liftF(Action.RunInControlChannel(
+      _ <- ConnectionA.liftF(ConnectionA.RunInControlChannel(
         ChannelInput.Prog("listen in control channel", channel.programs.controlListen)))
     } yield PNext.Debuffer
 
-  def connect: Action.Step[PNext] =
+  def connect: ConnectionA.Step[PNext] =
     for {
-      _ <- Action.liftF(Action.StartControlChannel)
-      _ <- Action.liftF(Action.RunInControlChannel(ChannelInput.Prog("connect to server", channel.programs.connect)))
+      _ <- ConnectionA.liftF(ConnectionA.StartControlChannel)
+      _ <- ConnectionA.liftF(ConnectionA.RunInControlChannel(ChannelInput.Prog("connect to server", channel.programs.connect)))
     } yield PNext.Regular
 }
