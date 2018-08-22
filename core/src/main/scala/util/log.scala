@@ -1,6 +1,7 @@
 package rabid
 
-import cats.effect.IO
+import cats.effect.{IO, Sync}
+import cats.implicits._
 import fs2.Pull
 import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
@@ -9,25 +10,41 @@ object Log
 {
   object pull
   {
-    def apply(handler: (String, String) => IO[Unit])(name: String, message: String): Pull[IO, Nothing, Unit] =
+    def apply[F[_]: Sync](handler: (String, String) => F[Unit])(name: String, message: String)
+    : Pull[F, Nothing, Unit] =
       Pull.eval(handler(name, message))
 
-    def error: (String, String) => Pull[IO, Nothing, Unit] =
-      apply(Log.error)
+    def error[F[_]: Sync](name: String, message: String): Pull[F, Nothing, Unit] =
+      apply(Log.error[F])(name, message)
 
-    def info: (String, String) => Pull[IO, Nothing, Unit] =
-      apply(Log.info)
+    def info[F[_]: Sync](name: String, message: String): Pull[F, Nothing, Unit] =
+      apply(Log.info[F])(name, message)
   }
 
-  def apply(handler: Logger[IO] => String => IO[Unit])(name: String, message: String): IO[Unit] =
+  def apply[F[_]: Sync](handler: Logger[F] => String => F[Unit])(name: String, message: String): F[Unit] =
     for {
-      logger <- Slf4jLogger.fromName[IO](name)
+      logger <- Slf4jLogger.fromName[F](name)
       _ <- handler(logger)(message)
     } yield ()
 
-  def info: (String, String) => IO[Unit] =
-    apply(a => a.info(_))
+  def info[F[_]: Sync](name: String, message: String): F[Unit] =
+    apply[F](a => a.info(_))(name, message)
 
-  def error: (String, String) => IO[Unit] =
-    apply(a => a.error(_))
+  def error[F[_]: Sync](name: String, message: String): F[Unit] =
+    apply[F](a => a.error(_))(name, message)
+
+  object io
+  {
+    def apply(handler: Logger[IO] => String => IO[Unit])(name: String, message: String): IO[Unit] =
+      for {
+        logger <- Slf4jLogger.fromName[IO](name)
+        _ <- handler(logger)(message)
+      } yield ()
+
+    def info: (String, String) => IO[Unit] =
+      apply(a => a.info(_))
+
+    def error: (String, String) => IO[Unit] =
+      apply(a => a.error(_))
+  }
 }

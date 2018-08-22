@@ -94,7 +94,7 @@ object Action
       EitherT.fromEither[State](a)
 
     def error(message: String): Effect[Unit] =
-      pull(rabid.Log.pull.error("connection", message))
+      pull(rabid.Log.pull.error[IO]("connection", message))
   }
 
   object State

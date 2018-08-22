@@ -19,7 +19,7 @@ import channel.{Channel, ChannelInput, programs}
 // handle the signal or queue to the channel interpreter depending on the data type
 object Api
 {
-  def send(name: String, thunk: Channel.Thunk)(channel: Channel): Stream[IO, Unit] =
+  def send(name: String, thunk: Channel.Prog)(channel: Channel): Stream[IO, Unit] =
     Stream.eval(channel.exchange.in.enqueue1(ChannelInput.Prog(name, thunk)))
 
   def declareExchange(name: String): Channel => Stream[IO, Unit] =

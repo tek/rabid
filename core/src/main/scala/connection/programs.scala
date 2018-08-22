@@ -8,33 +8,33 @@ import channel.{Channel, ChannelInput}
 
 object programs
 {
-  def sendToRabbit(message: Message): Action.Step[Continuation] =
-    Action.liftF(Action.Send(message)).as(Continuation.Regular)
+  def sendToRabbit(message: Message): Action.Step[PNext] =
+    Action.liftF(Action.Send(message)).as(PNext.Regular)
 
-  def sendToChannel(header: FrameHeader, body: FrameBody): Action.Step[Continuation] =
-    Action.liftF(Action.ChannelReceive(header, body)).as(Continuation.Regular)
+  def sendToChannel(header: FrameHeader, body: FrameBody): Action.Step[PNext] =
+    Action.liftF(Action.ChannelReceive(header, body)).as(PNext.Regular)
 
-  def createChannel(channel: Channel): Action.Step[Continuation] =
-    Action.liftF(Action.OpenChannel(channel)).as(Continuation.Regular)
+  def createChannel(channel: Channel): Action.Step[PNext] =
+    Action.liftF(Action.OpenChannel(channel)).as(PNext.Regular)
 
-  def channelOpened(number: Short, id: String): Action.Step[Continuation] =
+  def channelOpened(number: Short, id: String): Action.Step[PNext] =
     for {
       _ <- Action.liftF(Action.NotifyChannel(number, ChannelInput.Opened))
       _ <- Action.liftF(Action.ChannelOpened(number, id))
-    } yield Continuation.Regular
+    } yield PNext.Regular
 
-  def exit: Action.Step[Continuation] =
-    Free.pure(Continuation.Exit)
+  def exit: Action.Step[PNext] =
+    Free.pure(PNext.Exit)
 
-  def connected: Action.Step[Continuation] =
+  def connected: Action.Step[PNext] =
     for {
       _ <- Action.liftF(Action.RunInControlChannel(
         ChannelInput.Prog("listen in control channel", channel.programs.controlListen)))
-    } yield Continuation.Debuffer
+    } yield PNext.Debuffer
 
-  def connect: Action.Step[Continuation] =
+  def connect: Action.Step[PNext] =
     for {
       _ <- Action.liftF(Action.StartControlChannel)
       _ <- Action.liftF(Action.RunInControlChannel(ChannelInput.Prog("connect to server", channel.programs.connect)))
-    } yield Continuation.Regular
+    } yield PNext.Regular
 }

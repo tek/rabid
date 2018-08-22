@@ -127,9 +127,9 @@ object Interpreter
         case Some(bits) =>
           Decoder[A].decode(bits) match {
             case Attempt.Successful(DecodeResult(a, _)) =>
-              Log.info("connection", s"decoded rabbit message $a").as(Some(a))
+              Log.info[IO]("connection", s"decoded rabbit message $a").as(Some(a))
             case Attempt.Failure(err) =>
-              Log.error("connection", s"rabbit chunk decoding failed for `$description`: $err | $bits").as(None)
+              Log.error[IO]("connection", s"rabbit chunk decoding failed for `$description`: $err | $bits").as(None)
           }
         case None =>
           IO.pure(None)

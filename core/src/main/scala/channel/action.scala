@@ -12,44 +12,44 @@ import fs2.async.mutable.Signal
 
 import connection.Input
 
-sealed trait Action[A]
+sealed trait ChannelA[A]
 
-object Action
+object ChannelA
 {
-  type Attempt[A] = scodec.Attempt[Action[A]]
+  type Attempt[A] = scodec.Attempt[ChannelA[A]]
   type Step[A] = Free[Attempt, A]
   type Pull[A] = fs2.Pull[IO, Input, A]
   type State[A] = StateT[Pull, ChannelData, A]
-  type Effect[A] = EitherT[Pull, Err, A]
+  type Effect[A] = EitherT[State, Err, A]
 
   case object SendAmqpHeader
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
   case object Receive
-  extends Action[ByteVector]
+  extends ChannelA[ByteVector]
 
   case class SendMethod(payload: ByteVector)
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
   case class SendContent(classId: Short, payload: ByteVector)
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
   case object ReceiveContent
-  extends Action[ByteVector]
+  extends ChannelA[ByteVector]
 
   case class NotifyConsumer(signal: Signal[IO, Option[Either[String, String]]], data: Either[String, String])
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
   case class Log(message: String)
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
   case class Output(comm: Input)
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
   case object ChannelOpened
-  extends Action[Unit]
+  extends ChannelA[Unit]
 
-  def liftF[A](a: Action[A]): Step[A] =
+  def liftF[A](a: ChannelA[A]): Step[A] =
     Free.liftF[Attempt, A](scodec.Attempt.Successful(a))
 
   def pure[A](a: A): Step[A] =
@@ -81,19 +81,19 @@ object Action
   object Effect
   {
     def pure[A](a: A): Effect[A] =
-      EitherT.liftF(Pull.pure(a))
+      EitherT.liftF(State.pure(a))
 
     def unit: Effect[Unit] =
       pure(())
 
     def pull[A](p: Pull[A]): Effect[A] =
-      EitherT.liftF(p)
+      EitherT.liftF(State.pull(p))
 
     def eval[A](fa: IO[A]): Effect[A] =
       pull(fs2.Pull.eval(fa))
 
     def either[A](a: Either[Err, A]): Effect[A] =
-      EitherT.fromEither[Pull](a)
+      EitherT.fromEither[State](a)
 
     def attempt[A](a: scodec.Attempt[A]): Effect[A] =
       either(a.toEither)
@@ -131,7 +131,7 @@ object ActionResult
 
 object Actions
 {
-  import Action._
+  import ChannelA._
 
   def sendAmqpHeader: Step[Unit] = liftF(SendAmqpHeader)
 
