@@ -1,20 +1,18 @@
 package rabid
 package channel
 
-import scodec.bits.BitVector
-import scodec.codecs.utf8
-import scodec.codecs.implicits._
 import fs2.async.mutable.Signal
-import cats.effect.IO
 import cats.implicits._
+import cats.effect.IO
+import io.circe.Encoder
+import io.circe.syntax._
 
-import Field._
 import connection.Input
 import Actions._
 
 object programs
 {
-  def connect: ChannelA.Step[PNext] =
+  def connect: ChannelA.Internal =
     for {
       _ <- sendAmqpHeader
       start <- receiveMethod[Method.connection.Start]
@@ -23,15 +21,15 @@ object programs
       _ <- sendMethod(method.connection.tuneOk(tune))
       _ <- sendMethod(method.connection.open)
       openOk <- receiveMethod[Method.connection.OpenOk]
-      _ <- ChannelA.liftF(ChannelA.Output(Input.Connected))
+      _ <- Actions.connectionOutput(Input.Connected)
     } yield PNext.Debuffer
 
-  def serverClose(code: Short, text: String, classId: Short, methodId: Short): ChannelA.Step[PNext] =
+  def serverClose(code: Short, text: String, classId: Short, methodId: Short): ChannelA.Internal =
     for {
       _ <- log(s"server closed the connection after method $classId/$methodId with $code: $text")
     } yield PNext.Exit
 
-  def controlListen: ChannelA.Step[PNext] =
+  def controlListen: ChannelA.Internal =
     for {
       method <- receiveFramePayload[Method]
       _ <- log(s"control received $method")
@@ -42,54 +40,82 @@ object programs
       }
     } yield output
 
-  def createChannel(number: Short): ChannelA.Step[PNext] =
+  def createChannel(number: Short): ChannelA.Internal =
     for {
       _ <- log(s"creating channel $number")
       _ <- sendMethod(method.channel.open)
       openOk <- receiveMethod[Method.channel.OpenOk]
       _ <- channelOpened
-      _ <- output(Input.ChannelOpened(number, openOk.channelId.data))
+      _ <- connectionOutput(Input.ChannelOpened(number, openOk.channelId.data))
     } yield PNext.Regular
 
-  def declareExchange(name: String): ChannelA.Step[PNext] =
+  def declareExchange(name: String): ChannelA.Internal =
     for {
       _ <- log(s"declaring exchange `$name`")
       _ <- sendMethod(method.exchange.declare(name))
       _ <- receiveMethod[Method.exchange.DeclareOk.type]
     } yield PNext.Regular
 
-  def declareQueue(name: String): ChannelA.Step[PNext] =
+  def declareQueue(name: String): ChannelA.Internal =
     for {
       _ <- log(s"declaring queue `$name`")
       _ <- sendMethod(method.queue.declare(name))
       _ <- receiveMethod[Method.queue.DeclareOk]
     } yield PNext.Regular
 
-  def bindQueue(exchange: String, name: String, routingKey: String): ChannelA.Step[PNext] =
+  def bindQueue(exchange: String, name: String, routingKey: String): ChannelA.Internal =
     for {
       _ <- log(s"binding queue `$name` to `$exchange`")
       _ <- sendMethod(method.queue.bind(exchange, name, routingKey))
       _ <- receiveMethod[Method.queue.BindOk.type]
     } yield PNext.Regular
 
-  def publish1(exchange: String, routingKey: String, data: String): ChannelA.Step[PNext] =
+  def publish1(exchange: String, routingKey: String, data: String): ChannelA.Internal =
     for {
       _ <- log(s"publishing to `$exchange` with `$routingKey`")
       _ <- sendMethod(method.basic.publish(exchange, routingKey))
       _ <- sendContent(ClassId.basic.id, data)
     } yield PNext.Regular
 
-  def consume1(queue: String, signal: Signal[IO, Option[Either[String, String]]]): ChannelA.Step[PNext] =
+  def publish1Json[A: Encoder](exchange: String, routingKey: String)(message: A): ChannelA.Internal =
+    publish1(exchange, routingKey, message.asJson.spaces2)
+
+  def publishJson[A: Encoder](exchange: String, routingKey: String)(messages: List[A]): ChannelA.Internal =
+    messages.traverse(publish1Json(exchange, routingKey)).as(PNext.Regular)
+
+  def consume1(queue: String, signal: Signal[IO, Option[Either[String, String]]]): ChannelA.Internal =
     for {
       _ <- log(s"consuming one from `$queue`")
       _ <- sendMethod(method.basic.get(queue, false))
       response <- receiveFramePayload[Method.basic.GetResponse]
        message <- response match {
          case Method.basic.GetResponse(Right(_)) =>
-           receiveContent.map(a => utf8.decode(BitVector(a)).toEither.map(_.value).leftMap(_.toString))
+           receiveStringContent.map(Right(_))
          case Method.basic.GetResponse(Left(_)) =>
            ChannelA.pure(Left("no message available"))
        }
        _ <- notifyConsumer(signal, message)
     } yield PNext.Regular
+
+  def syncProg(prog: ChannelA.Step[ChannelOutput]): ChannelA.Internal =
+    for {
+      a <- prog
+      _ <- Actions.output(a)
+    } yield PNext.Regular
+
+  def deliverLoop(stop: Signal[IO, Boolean]): ChannelA.Internal =
+    for {
+      _ <- receiveMethod[Method.basic.Deliver]
+      data <- receiveStringContent
+      _ <- Actions.output(ChannelOutput(data))
+      a <- deliverLoop(stop)
+    } yield a
+
+  def consume(queue: String, stop: Signal[IO, Boolean]): ChannelA.Internal =
+    for {
+      _ <- log(s"consuming from `$queue`")
+      _ <- sendMethod(method.basic.consume(queue, "", false))
+      _ <- receiveMethod[Method.basic.ConsumeOk]
+      next <- deliverLoop(stop)
+    } yield next
 }

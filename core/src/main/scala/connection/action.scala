@@ -26,7 +26,7 @@ object ConnectionA
   case object StartControlChannel
   extends ConnectionA[Unit]
 
-  case class RunInControlChannel(action: ChannelInput.Prog)
+  case class RunInControlChannel(action: ChannelInput.Internal)
   extends ConnectionA[Unit]
 
   case class ChannelReceive(header: FrameHeader, body: FrameBody)

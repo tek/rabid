@@ -9,7 +9,6 @@ import scala.concurrent.ExecutionContext
 import fs2.{Stream, Chunk, Pull}
 import fs2.io.tcp
 import fs2.interop.scodec.ByteVectorChunk
-import fs2.async.mutable.Queue
 import scodec.{Encoder, Decoder, Attempt, DecodeResult, Err}
 import scodec.bits.{BitVector}
 import cats.~>
@@ -33,11 +32,6 @@ object Interpreter
         } yield ()
     }
 
-  def channelOutput(channels: Connection.ChannelPool)
-  (implicit ec: ExecutionContext)
-  : Stream[IO, Input] =
-    channels.dequeue.join(10)
-
   def startChannel(connection: ChannelConnection)
   (channel: Stream[IO, Input])
   : ConnectionA.State[Unit] =
@@ -48,7 +42,6 @@ object Interpreter
     } yield ()
 
   def startControlChannel
-  (implicit ec: ExecutionContext)
   : ConnectionA.State[Unit] =
     for {
       connection <- ConnectionA.State.inspect(_.channel0)
@@ -81,16 +74,16 @@ object Interpreter
       }
     } yield connection
 
-  def runInChannel(channel: ChannelConnection)(thunk: ChannelInput.Prog)
+  def runInChannel(connection: ChannelConnection)(thunk: ChannelInput.Prog)
   : ConnectionA.State[Unit] =
-    ConnectionA.State.eval(channel.progs.enqueue1(thunk))
+    ConnectionA.State.eval(connection.channel.exchange.in.enqueue1(thunk))
 
-  def runInControlChannel(thunk: ChannelInput.Prog)
+  def runInControlChannel(thunk: ChannelInput.Internal)
   : ConnectionA.State[Unit] =
     for {
       _ <- ConnectionA.State.eval(log("running job in control channel"))
-      channel <- ConnectionA.State.inspect(_.channel0)
-      _ <- ConnectionA.State.eval(channel.progs.enqueue1(thunk))
+      connection <- ConnectionA.State.inspect(_.channel0)
+      _ <- ConnectionA.State.eval(connection.channel.exchange.in.enqueue1(thunk))
     } yield ()
 
   def createChannel(channel: Channel)
@@ -113,7 +106,7 @@ object Interpreter
   : ConnectionA.Effect[Unit] =
     for {
       connection <- channelConnection(number)
-      _ <- ConnectionA.Effect.eval(connection.progs.enqueue1(input))
+      _ <- ConnectionA.Effect.eval(connection.channel.exchange.in.enqueue1(input))
     } yield ()
 
   def receive(client: tcp.Socket[IO])(numBytes: Int): IO[Option[BitVector]] =
@@ -136,11 +129,6 @@ object Interpreter
       }
     } yield output
 
-  def listenChannels(pool: Connection.ChannelPool)
-  (implicit ec: ExecutionContext)
-  : Stream[IO, Input] =
-    channelOutput(pool)
-
   def receiveFrame(client: tcp.Socket[IO]): OptionT[IO, Input] =
     for {
       header <- OptionT(receiveAs[FrameHeader](client)("frame header")(7))
@@ -158,11 +146,6 @@ object Interpreter
 
   def listenRabbit(client: tcp.Socket[IO]): Stream[IO, Input] =
     Pull.loop(listenRabbitLoop(client))(()).stream
-
-  def listen(client: tcp.Socket[IO], pool: Connection.ChannelPool, channels: Queue[IO, Input])
-  (implicit ec: ExecutionContext)
-  : Stream[IO, Input] =
-    listenChannels(pool).merge(listenRabbit(client)).merge(channels.dequeue)
 
   def log(message: String): IO[Unit] =
     for {
@@ -198,22 +181,8 @@ object Interpreter
 
   def native(host: String, port: Int)
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
-  : Stream[IO, (
-    Connection.ChannelPool,
-    Stream[IO, Input],
-    Queue[IO, Input],
-    ConnectionA ~> ConnectionA.Effect,
-    IO[Unit],
-    )] =
+  : Stream[IO, (Stream[IO, Input], ConnectionA ~> ConnectionA.Effect)] =
     for {
       client <- tcp.client[IO](new InetSocketAddress(host, port))
-      pool <- Stream.eval(Queue.unbounded[IO, Stream[IO, Input]])
-      input <- Stream.eval(Queue.unbounded[IO, Input])
-    } yield (
-      pool,
-      listen(client, pool, input),
-      input,
-      nativeInterpreter(client),
-      client.close,
-    )
+    } yield (listenRabbit(client), (nativeInterpreter(client)))
 }

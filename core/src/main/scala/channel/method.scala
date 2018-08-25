@@ -62,5 +62,8 @@ object method
 
     def get(queue: String, ack: Boolean): Method.basic.Get =
       Method.basic.Get(0, ShortString(queue), !ack)
+
+    def consume(queue: String, consumerTag: String, ack: Boolean): Method.basic.Consume =
+      Method.basic.Consume(0, ShortString(queue), ShortString(consumerTag), false, !ack, false, false, Table.empty)
   }
 }

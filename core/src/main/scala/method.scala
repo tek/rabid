@@ -310,6 +310,47 @@ object Method
 
   object basic
   {
+    case class Consume(
+      ticket: Short,
+      queue: ShortString,
+      consumerTag: ShortString,
+      noLocal: Boolean,
+      noack: Boolean,
+      exclusive: Boolean,
+      nowait: Boolean,
+      arguments: Table,
+    )
+    extends Method
+
+    object Consume
+    {
+      implicit val codec: Codec[Consume] =
+        (short16 :: shortstr :: shortstr :: bool :: bool :: bool :: bool :: table).as[Consume]
+
+      implicit val ClassId_Consume: ClassId[Consume] =
+        ClassId.basic
+
+      implicit val MethodId_Consume: MethodId[Consume] =
+        MethodId(20)
+    }
+
+    case class ConsumeOk(
+      consumerTag: ShortString,
+    )
+    extends Method
+
+    object ConsumeOk
+    {
+      implicit val codec: Codec[ConsumeOk] =
+        shortstr.as[ConsumeOk]
+
+      implicit val ClassId_ConsumeOk: ClassId[ConsumeOk] =
+        ClassId.basic
+
+      implicit val MethodId_ConsumeOk: MethodId[ConsumeOk] =
+        MethodId(21)
+    }
+
     case class Publish(
       ticket: Short,
       exchange: ShortString,
@@ -329,6 +370,27 @@ object Method
 
       implicit val MethodId_Publish: MethodId[Publish] =
         MethodId(40)
+    }
+
+    case class Deliver(
+      consumerTag: ShortString,
+      deliveryTag: Long,
+      redelivered: Bool,
+      exchange: ShortString,
+      routingKey: ShortString,
+    )
+    extends Method
+
+    object Deliver
+    {
+      implicit val codec: Codec[Deliver] =
+        (shortstr :: int64 :: boolean :: shortstr :: shortstr).as[Deliver]
+
+      implicit val ClassId_Deliver: ClassId[Deliver] =
+        ClassId.basic
+
+      implicit val MethodId_Deliver: MethodId[Deliver] =
+        MethodId(60)
     }
 
     case class Get(

@@ -18,6 +18,7 @@ object ChannelA
 {
   type Attempt[A] = scodec.Attempt[ChannelA[A]]
   type Step[A] = Free[Attempt, A]
+  type Internal = Step[PNext]
   type Pull[A] = fs2.Pull[IO, Input, A]
   type State[A] = StateT[Pull, ChannelData, A]
   type Effect[A] = EitherT[State, Err, A]
@@ -43,10 +44,13 @@ object ChannelA
   case class Log(message: String)
   extends ChannelA[Unit]
 
-  case class Output(comm: Input)
+  case class ConnectionOutput(comm: Input)
   extends ChannelA[Unit]
 
   case object ChannelOpened
+  extends ChannelA[Unit]
+
+  case class Output(data: ChannelOutput)
   extends ChannelA[Unit]
 
   def liftF[A](a: ChannelA[A]): Step[A] =
@@ -166,10 +170,18 @@ object Actions
 
   def receiveContent: Step[ByteVector] = liftF(ReceiveContent)
 
+  def receiveStringContent: Step[String] =
+    for {
+      bytes <- liftF(ReceiveContent)
+      data <- fromAttempt(utf8.decode(BitVector(bytes)))
+    } yield data.value
+
   def log[A](message: A): Step[Unit] =
     liftF(Log(message.toString))
 
   def channelOpened: Step[Unit] = liftF(ChannelOpened)
 
-  def output(comm: Input): Step[Unit] = liftF(Output(comm))
+  def connectionOutput(comm: Input): Step[Unit] = liftF(ConnectionOutput(comm))
+
+  def output(data: ChannelOutput): Step[Unit] = liftF(Output(data))
 }

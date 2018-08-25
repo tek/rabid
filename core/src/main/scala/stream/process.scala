@@ -56,6 +56,9 @@ object Process
 
     def liftF[F[_]: Applicative, I, A](fa: F[A]): ST[F, I, A] =
       StateT.liftF(fa)
+
+    def inspect[F[_]: Applicative, I, A](f: ProcessData[I] => A): StateT[F, ProcessData[I], A] =
+      StateT.inspect[F, ProcessData[I], A](f)
   }
 
   type EST[F[_], I, O, D, A] = StateT[Pull[F, O, ?], D, A]
@@ -72,20 +75,19 @@ object Process
     State.modify(s => s.copy(state = state))
 
   def debuffer[F[_]: Sync, I]
-  : StateT[F, ProcessData[I], Vector[I]] = {
+  : StateT[F, ProcessData[I], Vector[I]] =
     for {
-      buffered <- StateT.inspect[F, ProcessData[I], Vector[I]](_.buffer)
+      buffered <- ST.inspect[F, I, Vector[I]](_.buffer)
       _ <- {
         if (buffered.isEmpty) ST.pure[F, I, Unit](())
         else
           for {
             _ <- StateT.modify[F, ProcessData[I]](_.copy(buffer = Vector.empty))
-            logger <- StateT.inspect[F, ProcessData[I], String](_.logger)
+            logger <- ST.inspect[F, I, String](_.logger)
             _ <- ST.liftF(Log.info(logger, s"rebuffering inputs $buffered"))
           } yield ()
       }
     } yield buffered
-  }
 
   def continuation[F[_]: Sync, I](tail: Stream[F, I])
   : Either[Err, PNext] => StateT[F, ProcessData[I], Stream[F, I]] = {

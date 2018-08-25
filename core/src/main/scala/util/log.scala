@@ -32,19 +32,4 @@ object Log
 
   def error[F[_]: Sync](name: String, message: String): F[Unit] =
     apply[F](a => a.error(_))(name, message)
-
-  object io
-  {
-    def apply(handler: Logger[IO] => String => IO[Unit])(name: String, message: String): IO[Unit] =
-      for {
-        logger <- Slf4jLogger.fromName[IO](name)
-        _ <- handler(logger)(message)
-      } yield ()
-
-    def info: (String, String) => IO[Unit] =
-      apply(a => a.info(_))
-
-    def error: (String, String) => IO[Unit] =
-      apply(a => a.error(_))
-  }
 }

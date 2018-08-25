@@ -13,10 +13,8 @@ import io.circe.syntax._
 import io.circe.parser._
 
 import connection.{Connection, Input}
-import channel.{Channel, ChannelInput, programs}
+import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs}
 
-// in order to remove the Signal from the consume programs, make ChannelInput an ADT with variants Sync/Queue/Signal
-// handle the signal or queue to the channel interpreter depending on the data type
 object Api
 {
   def send(name: String, thunk: Channel.Prog)(channel: Channel): Stream[IO, Unit] =
@@ -43,7 +41,7 @@ case class Queue(name: String, channel: Channel)
          s"consume one from `$name`",
          programs.consume1(name, signal),
        )(channel)
-      data <- signal.discrete.collect { case Some(a) => a }.take(1)
+      data <- signal.discrete.unNone.head
     } yield for {
       message <- data
       a <- decode[A](message).leftMap(_.toString)
@@ -110,8 +108,32 @@ object Rabid
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
   : Stream[IO, Unit] =
     for {
-      (api, main, close) <- Connection.native(host, port)
+      (api, main) <- Connection.native(host, port)
       _ <- main.concurrently(consume(api))
-      _ <- Stream.eval(close)
     } yield ()
+
+  def openChannel(rabid: Rabid)(implicit ec: ExecutionContext): Stream[IO, Channel] =
+    for {
+      channel <- Stream.eval(Channel.cons)
+      _ <- Stream.eval(rabid.queue.enqueue1(Input.OpenChannel(channel)))
+    } yield channel
+
+  def sendToChannel(channel: Channel)(name: String, prog: ChannelA.Internal): Stream[IO, Unit] =
+      Stream.eval(channel.exchange.in.enqueue1(ChannelInput.Prog(name, prog)))
+
+  def runChannelSync(prog: ChannelA.Step[Unit])(channel: Channel): Stream[IO, ChannelOutput] =
+    for {
+      _ <- Stream.eval(
+        channel.exchange.in.enqueue1(ChannelInput.Prog(s"sync run $prog in $channel", prog.as(PNext.Regular))))
+      output <- channel.exchange.out.dequeue
+    } yield output
+
+  def publish1[A: Encoder](channel: Channel, exchange: String, routingKey: String)(message: A): Stream[IO, Unit] =
+    sendToChannel(channel)(
+      s"publish to `$exchange` as `$routingKey`: $message",
+      programs.publish1(exchange, routingKey, message.asJson.spaces2),
+    )
+
+  def publish[A: Encoder](channel: Channel, exchange: String, routingKey: String)(messages: List[A]): Stream[IO, Unit] =
+    messages.traverse(publish1(channel, exchange, routingKey)).void
 }

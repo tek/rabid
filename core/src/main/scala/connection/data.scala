@@ -147,14 +147,6 @@ object Message
 
 case class Exchange[A, B](in: Queue[IO, A], out: Queue[IO, B])
 
-sealed trait ConsumerResponse
-
-object ConsumerResponse
-{
-  case class Message()
-  extends ConsumerResponse
-}
-
 sealed trait Input
 
 object Input

@@ -7,7 +7,6 @@ import scodec.bits.ByteVector
 import cats.~>
 import cats.effect.IO
 import cats.implicits._
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import connection.{Message, Input}
 
@@ -15,7 +14,7 @@ object Interpreter
 {
   def send(channel: ChannelConnection)(message: Message): ChannelA.Effect[Unit] =
     for {
-      _ <- ChannelA.Effect.eval(log(s"channel ${channel.number}", s"sending $message"))
+      _ <- ChannelA.Effect.eval(Log.info[IO](s"channel ${channel.number}", s"sending $message"))
       _ <- ChannelA.Effect.pull(Pull.output1(Input.Rabbit(message)))
     } yield ()
 
@@ -38,37 +37,36 @@ object Interpreter
   : ChannelA.Effect[Unit] =
     ChannelA.Effect.eval(signal.set(Some(data)))
 
-  def log(name: String, message: String): IO[Unit] =
-    for {
-      logger <- Slf4jLogger.fromName[IO](name)
-      _ <- logger.info(message)
-    } yield ()
+  def output(connection: ChannelConnection)(data: ChannelOutput): ChannelA.Effect[Unit] =
+    ChannelA.Effect.eval(connection.channel.exchange.out.enqueue1(data))
 
   def awaitSignal(signal: Signal[IO, Boolean]): ChannelA.Effect[Unit] =
     ChannelA.Effect.eval(signal.discrete.filter(identity).take(1).compile.drain)
 
-  def interpreter(channel: ChannelConnection): ChannelA ~> ChannelA.Effect =
+  def interpreter(connection: ChannelConnection): ChannelA ~> ChannelA.Effect =
     new (ChannelA ~> ChannelA.Effect) {
       def apply[A](action: ChannelA[A]): ChannelA.Effect[A] =
         action match {
           case ChannelA.SendAmqpHeader =>
-            send(channel)(Message.header)
+            send(connection)(Message.header)
           case ChannelA.SendMethod(payload) =>
-            send(channel)(Message.Frame.method(channel.number, payload))
+            send(connection)(Message.Frame.method(connection.number, payload))
           case ChannelA.SendContent(classId, payload) =>
-            sendContent(channel, classId, payload)
+            sendContent(connection, classId, payload)
           case ChannelA.Receive =>
-            receive(channel)
+            receive(connection)
           case ChannelA.ReceiveContent =>
-            receiveContent(channel)
+            receiveContent(connection)
           case ChannelA.NotifyConsumer(signal, data) =>
             notifyConsumer(signal, data)
           case ChannelA.Log(message) =>
-            ChannelA.Effect.eval(log(s"channel ${channel.number}", message))
-          case ChannelA.Output(comm) =>
+            ChannelA.Effect.eval(Log.info[IO](s"channel ${connection.number}", message))
+          case ChannelA.ConnectionOutput(comm) =>
             ChannelA.Effect.pull(Pull.output1(comm))
           case ChannelA.ChannelOpened =>
             ChannelA.Effect.unit
+          case ChannelA.Output(data) =>
+            output(connection)(data)
         }
     }
 }

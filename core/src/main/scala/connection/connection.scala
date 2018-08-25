@@ -89,11 +89,36 @@ object Connection
     } yield ()
   }
 
+  def channelOutput(channels: Connection.ChannelPool)
+  (implicit ec: ExecutionContext)
+  : Stream[IO, Input] =
+    channels.dequeue.join(10)
+
+  def listenChannels(pool: Connection.ChannelPool)
+  (implicit ec: ExecutionContext)
+  : Stream[IO, Input] =
+    channelOutput(pool)
+
+  def listen(rabbit: Stream[IO, Input], pool: Connection.ChannelPool, channels: Queue[IO, Input])
+  (implicit ec: ExecutionContext)
+  : Stream[IO, Input] =
+    listenChannels(pool).merge(rabbit).merge(channels.dequeue)
+
+  def using(rabbitInput: Stream[IO, Input])(interpreter: ConnectionA ~> ConnectionA.Effect)
+  (implicit ec: ExecutionContext)
+  : IO[(Rabid, Stream[IO, Unit])] =
+    for {
+      pool <- Queue.unbounded[IO, Stream[IO, Input]]
+      input <- Queue.unbounded[IO, Input]
+    } yield (Rabid(input), run(pool, interpreter, listen(rabbitInput, pool, input)))
+
+
   def native
   (host: String, port: Int)
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
-  : Stream[IO, (Rabid, Stream[IO, Unit], IO[Unit])] =
+  : Stream[IO, (Rabid, Stream[IO, Unit])] =
     for {
-      (pool, listen, input, interpreter, close) <- Interpreter.native(host, port)
-    } yield (Rabid(input), run(pool, interpreter, listen), close)
+      (rabbitInput, interpreter) <- Interpreter.native(host, port)
+      (rabid, main) <- Stream.eval(using(rabbitInput)(interpreter))
+    } yield (rabid, main)
 }
