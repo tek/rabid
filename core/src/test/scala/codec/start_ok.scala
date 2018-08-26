@@ -37,7 +37,7 @@ object CodecStartOkSpec
 
   val bytes = Encoder.encode(ClassMethod(sok)).require.toByteVector
 
-  val frame = Message.Frame(FrameType.Method, 0, bytes.size.toInt, bytes, Message.Frame.end)
+  val frame = connection.Message.Frame(FrameType.Method, 0, bytes.size.toInt, bytes, connection.Message.Frame.end)
 }
 
 class CodecStartOkSpec

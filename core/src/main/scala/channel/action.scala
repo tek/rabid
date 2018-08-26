@@ -53,6 +53,9 @@ object ChannelA
   case class Output(data: ChannelOutput)
   extends ChannelA[Unit]
 
+  case class Eval[A](fa: IO[A])
+  extends ChannelA[A]
+
   def liftF[A](a: ChannelA[A]): Step[A] =
     Free.liftF[Attempt, A](scodec.Attempt.Successful(a))
 
@@ -184,4 +187,6 @@ object Actions
   def connectionOutput(comm: Input): Step[Unit] = liftF(ConnectionOutput(comm))
 
   def output(data: ChannelOutput): Step[Unit] = liftF(Output(data))
+
+  def eval[A](fa: IO[A]): Step[A] = liftF(Eval(fa))
 }

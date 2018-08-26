@@ -118,10 +118,10 @@ object Process
     }
 
   def zoomRight[F[_]: Functor, S, R, A](st: StateT[F, R, A]): StateT[F, (S, R), A] =
-    st.transformS[(S, R)](_._2, (pdd, d) => (pdd._1, d))
+    st.transformS[(S, R)](_._2, (a, b) => (a._1, b))
 
   def zoomLeft[F[_]: Functor, S, R, A](st: StateT[F, S, A]): StateT[F, (S, R), A] =
-    st.transformS[(S, R)](_._1, (pdd, pd) => (pd, pdd._2))
+    st.transformS[(S, R)](_._1, (a, b) => (b, a._2))
 
   def liftPull[F[_]: FlatMap, S, A, O](st: StateT[F, S, A]): StateT[Pull[F, O, ?], S, A] =
     st.transformF(Pull.eval)
@@ -130,12 +130,11 @@ object Process
     interpreter: A ~> Effect[F, I, O, D, ?],
     program: Step[A, PNext],
     tail: Stream[F, I]
-  ): EST[F, I, O, (ProcessData[I], D), Stream[F, I]] = {
+  ): EST[F, I, O, (ProcessData[I], D), Stream[F, I]] =
     for {
       output <- zoomRight(program.foldMap(interpretAttempt(interpreter)).value)
       cont <- zoomLeft(liftPull[F, ProcessData[I], Stream[F, I], O](continuation(tail).apply(output)))
     } yield cont
-  }
 
   def process[F[_]: Sync, I, O, A[_], D](
     interpreter: A ~> Effect[F, I, O, D, ?],

@@ -57,12 +57,10 @@ object Interpreter
     } yield smallestUnused(numbers).toShort
 
   def consChannel(channel: Channel)
-  (implicit ec: ExecutionContext)
   : ConnectionA.State[ChannelConnection] =
     for {
       number <- unusedChannelNumber
-      connection <- ConnectionA.State.eval(ChannelConnection.cons(number.toShort, channel))
-    } yield connection
+    } yield ChannelConnection(number.toShort, channel, channel.receive)
 
   def channelConnection(number: Short): ConnectionA.Effect[ChannelConnection] =
     for {
@@ -87,7 +85,6 @@ object Interpreter
     } yield ()
 
   def createChannel(channel: Channel)
-  (implicit ec: ExecutionContext)
   : ConnectionA.State[Unit] =
     for {
       connection <- consChannel(channel)
@@ -99,7 +96,7 @@ object Interpreter
     for {
       connection <- channelConnection(header.channel)
       _ <- ConnectionA.Effect.eval(log(s"sending to channel ${connection.number}"))
-      _ <- ConnectionA.Effect.eval(connection.receive.enqueue1(body.payload))
+      _ <- ConnectionA.Effect.eval(connection.receive.enqueue1(Right(body.payload)))
     } yield ()
 
   def notifyChannel(number: Short, input: ChannelInput)
@@ -154,7 +151,6 @@ object Interpreter
     } yield ()
 
   def nativeInterpreter(client: tcp.Socket[IO])
-  (implicit ec: ExecutionContext)
   : ConnectionA ~> ConnectionA.Effect =
     new (ConnectionA ~> ConnectionA.Effect) {
       def apply[A](action: ConnectionA[A]): ConnectionA.Effect[A] = {

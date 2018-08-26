@@ -24,8 +24,26 @@ object Interpreter
       _ <- frames.traverse(send(channel))
     } yield ()
 
-  def receive(channel: ChannelConnection): ChannelA.Effect[ByteVector] =
-    ChannelA.Effect.eval(channel.receive.dequeue1)
+  def interruptProg: ChannelInterrupt => ChannelA.Step[Unit] = {
+    case ChannelInterrupt.Ack(deliveryTag, multiple) =>
+      Actions.sendMethod(method.basic.ack(deliveryTag, multiple))
+  }
+
+  def interrupt(connection: ChannelConnection)(job: ChannelInterrupt): ChannelA.Effect[Unit] =
+    interruptProg(job).foldMap(Process.interpretAttempt(interpreter(connection)))
+
+  def receive(connection: ChannelConnection): ChannelA.Effect[ByteVector] =
+    for {
+      input <- ChannelA.Effect.eval(connection.receive.dequeue1)
+      a <- input match {
+        case Right(bytes) => ChannelA.Effect.pure(bytes)
+        case Left(job) =>
+          for {
+            _ <- interrupt(connection)(job)
+            a <- receive(connection)
+          } yield a
+      }
+    } yield a
 
   def receiveContent(channel: ChannelConnection): ChannelA.Effect[ByteVector] =
     for {
@@ -67,6 +85,8 @@ object Interpreter
             ChannelA.Effect.unit
           case ChannelA.Output(data) =>
             output(connection)(data)
+          case ChannelA.Eval(fa) =>
+            ChannelA.Effect.eval(fa)
         }
     }
 }

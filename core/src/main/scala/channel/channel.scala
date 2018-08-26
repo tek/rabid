@@ -9,10 +9,14 @@ import cats.implicits._
 import cats.data.State
 import cats.free.Free
 import cats.effect.IO
+import scodec.bits.ByteVector
 
 import connection.{Exchange, Input}
 
-case class Channel(exchange: Exchange[ChannelInput, ChannelOutput])
+case class Channel(
+  exchange: Exchange[ChannelInput, ChannelOutput],
+  receive: Queue[IO, Either[ChannelInterrupt, ByteVector]],
+)
 
 object Channel
 {
@@ -20,7 +24,8 @@ object Channel
     for {
       in <- Queue.unbounded[IO, ChannelInput]
       out <- Queue.unbounded[IO, ChannelOutput]
-    } yield Channel(Exchange(in, out))
+      receive <- Queue.unbounded[IO, Either[ChannelInterrupt, ByteVector]]
+    } yield Channel(Exchange(in, out), receive)
 
   type Prog = ChannelA.Step[PNext]
 
@@ -44,6 +49,8 @@ object Channel
     case ChannelInput.Sync(name, thunk) =>
       Actions.log(s"running sync channel prog `$name`") >> programs.syncProg(thunk)
     case ChannelInput.Opened => ChannelA.pure(PNext.Debuffer)
+    case ChannelInput.StopConsumer =>
+      ChannelA.pure(PNext.Exit)
   }
 
   def execute(number: Short): PState => ChannelInput => State[ProcessData[ChannelInput], ChannelA.Internal] = {

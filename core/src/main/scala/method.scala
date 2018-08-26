@@ -455,6 +455,42 @@ object Method
       implicit def Codec_GetResponse: Codec[GetResponse] =
         fallback(Codec[ClassMethod[GetEmpty]], Codec[ClassMethod[GetOk]]).as[GetResponse]
     }
+
+    case class Ack(
+      deliveryTag: Long,
+      multiple: Boolean,
+    )
+    extends Method
+
+    object Ack
+    {
+      implicit val codec: Codec[Ack] =
+        (int64 :: bool).as[Ack]
+
+      implicit val ClassId_Ack: ClassId[Ack] =
+        ClassId.basic
+
+      implicit val MethodId_Ack: MethodId[Ack] =
+        MethodId(80)
+    }
+
+    case class Reject(
+      deliveryTag: Long,
+      multiple: Boolean,
+    )
+    extends Method
+
+    object Reject
+    {
+      implicit val codec: Codec[Reject] =
+        (int64 :: bool).as[Reject]
+
+      implicit val ClassId_Reject: ClassId[Reject] =
+        ClassId.basic
+
+      implicit val MethodId_Reject: MethodId[Reject] =
+        MethodId(70)
+    }
   }
 
   implicit def Discriminated_Method: Discriminated[Method, (Short, Short)] =

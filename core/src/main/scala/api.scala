@@ -13,7 +13,9 @@ import io.circe.syntax._
 import io.circe.parser._
 
 import connection.{Connection, Input}
-import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs}
+import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelInterrupt}
+
+case class Message[A](data: A, deliveryTag: Long)
 
 object Api
 {
@@ -64,9 +66,6 @@ case class Exchange(name: String, channel: Channel)
 }
 
 case class BoundQueue(exchange: Exchange, queue: Queue, routingKey: String, channel: Channel)
-{
-  def consume[A: Decoder]: Stream[IO, Stream[IO, A]] = ???
-}
 
 case class ChannelApi(channel: Channel)
 {
@@ -102,38 +101,101 @@ case class Rabid(queue: FQueue[IO, Input])
 
 object Rabid
 {
-  def native
+  def native[A]
   (host: String, port: Int)
-  (consume: Rabid => Stream[IO, Unit])
+  (consume: Rabid => Stream[IO, A])
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
-  : Stream[IO, Unit] =
+  : Stream[IO, A] =
     for {
       (api, main) <- Connection.native(host, port)
-      _ <- main.concurrently(consume(api))
-    } yield ()
+      a <- consume(api).concurrently(main)
+    } yield a
 
-  def openChannel(rabid: Rabid)(implicit ec: ExecutionContext): Stream[IO, Channel] =
+  def openChannel(rabid: Rabid)(implicit ec: ExecutionContext): IO[Channel] =
     for {
-      channel <- Stream.eval(Channel.cons)
-      _ <- Stream.eval(rabid.queue.enqueue1(Input.OpenChannel(channel)))
+      channel <- Channel.cons
+      _ <- rabid.queue.enqueue1(Input.OpenChannel(channel))
     } yield channel
 
-  def sendToChannel(channel: Channel)(name: String, prog: ChannelA.Internal): Stream[IO, Unit] =
-      Stream.eval(channel.exchange.in.enqueue1(ChannelInput.Prog(name, prog)))
+  def sendToChannel(channel: Channel)(name: String, prog: ChannelA.Internal): IO[Unit] =
+      channel.exchange.in.enqueue1(ChannelInput.Prog(name, prog))
 
-  def runChannelSync(prog: ChannelA.Step[Unit])(channel: Channel): Stream[IO, ChannelOutput] =
+  def unitChannel(channel: Channel)(name: String, prog: ChannelA.Step[Unit]): IO[Unit] =
+    sendToChannel(channel)(name, prog.as(PNext.Regular))
+
+  def consumeChannel(channel: Channel): Stream[IO, ChannelOutput] =
+    channel.exchange.out.dequeue
+
+  def consumerChannel(channel: Channel)(name: String, prog: ChannelA.Step[Unit]): Stream[IO, ChannelOutput] =
+    Stream.eval(unitChannel(channel)(name, prog)) >> consumeChannel(channel)
+
+  def syncProg[A](prog: ChannelA.Step[A], comm: FQueue[IO, A]): ChannelA.Step[Unit] =
     for {
-      _ <- Stream.eval(
-        channel.exchange.in.enqueue1(ChannelInput.Prog(s"sync run $prog in $channel", prog.as(PNext.Regular))))
-      output <- channel.exchange.out.dequeue
-    } yield output
+      a <- prog
+      _ <- channel.Actions.eval(comm.enqueue1(a))
+    } yield ()
 
-  def publish1[A: Encoder](channel: Channel, exchange: String, routingKey: String)(message: A): Stream[IO, Unit] =
+  def syncChannel[A](channel: Channel)(name: String, prog: ChannelA.Step[A])
+  (implicit ec: ExecutionContext)
+  : IO[A] =
+    for {
+      comm <- FQueue.bounded[IO, A](1)
+      _ <- unitChannel(channel)(name, syncProg(prog, comm))
+      a <- comm.dequeue1
+    } yield a
+
+  def publish1[A: Encoder](channel: Channel, exchange: String, routingKey: String)(message: A): IO[Unit] =
     sendToChannel(channel)(
       s"publish to `$exchange` as `$routingKey`: $message",
       programs.publish1(exchange, routingKey, message.asJson.spaces2),
     )
 
-  def publish[A: Encoder](channel: Channel, exchange: String, routingKey: String)(messages: List[A]): Stream[IO, Unit] =
-    messages.traverse(publish1(channel, exchange, routingKey)).void
+  def publish[A: Encoder](rabid: Rabid)(exchange: String, routingKey: String)(messages: List[A])
+  (implicit ec: ExecutionContext)
+  : IO[Unit] =
+    for {
+      channel <- openChannel(rabid)
+      _ <- messages.traverse(publish1(channel, exchange, routingKey)).void
+    } yield ()
+
+  def consumeProg(stop: Signal[IO, Boolean])
+  (exchange: String, queue: String, route: String, ack: Boolean)
+  : ChannelA.Step[Unit] =
+    for {
+      _ <- programs.declareExchange(exchange)
+      _ <- programs.declareQueue(queue)
+      _ <- programs.bindQueue(exchange, queue, route)
+      _ <- programs.consume(queue, stop, ack)
+    } yield ()
+
+  def interruptChannel(channel: Channel)(message: ChannelInterrupt): IO[Unit] =
+    channel.receive.enqueue1(Left(message))
+
+  def acker[A](channel: Channel): List[Message[A]] => IO[Unit] =
+    messages => messages.map(a => ChannelInterrupt.Ack(a.deliveryTag, false)).traverse(interruptChannel(channel)).void
+
+  def consumeJsonIn[A: Decoder]
+  (channel: Channel)
+  (stop: Signal[IO, Boolean])
+  (exchange: String, queue: String, route: String, ack: Boolean)
+  : Stream[IO, Message[A]] =
+    for {
+      _ <- consumerChannel(channel)(
+        s"consume json from $exchange:$queue:$route", consumeProg(stop)(exchange, queue, route, ack))
+      output <- consumeChannel(channel)
+      data <- decode[A](output.message.data) match {
+        case Right(a) => Stream(Message(a, output.message.deliveryTag))
+        case Left(error) =>
+          println(error)
+          Stream.empty
+      }
+    } yield data
+
+  def consumeJson[A: Decoder](rabid: Rabid)(exchange: String, queue: String, route: String, ack: Boolean)
+  (implicit ec: ExecutionContext)
+  : Stream[IO, (List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
+    for {
+      stop <- Signals.event
+      channel <- Stream.eval(openChannel(rabid))
+    } yield (acker(channel), consumeJsonIn[A](channel)(stop)(exchange, queue, route, ack))
 }

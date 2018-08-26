@@ -12,4 +12,9 @@ object Signals
   (implicit ec: ExecutionContext)
   : Stream[IO, A] =
     stream.pauseWhen(signal.map(!_))
+
+  def event
+  (implicit ec: ExecutionContext)
+  : Stream[IO, Signal[IO, Boolean]] =
+    Stream.eval(Signal[IO, Boolean](false))
 }

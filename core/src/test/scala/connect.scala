@@ -48,7 +48,7 @@ object ConnectSpec
     .provider()
     .openAsynchronousChannelGroup(20, ThreadFactories.named("rabbit", true))
 
-  def consume(rabid: Rabid): Stream[IO, Unit] =
+  def consumeSingle(rabid: Rabid): Stream[IO, Unit] =
     for {
       channel <- rabid.channel
       queue <- channel.simpleQueue("cue")
@@ -67,23 +67,27 @@ object ConnectSpec
       _ <- programs.publishJson(name, route)(List(Data(1), Data(2), Data(3), Data(4)))
       queue <- programs.declareQueue(name)
       bound <- programs.bindQueue(name, name, route)
-      _ <- programs.consume(name, stop)
+      _ <- programs.consume(name, stop, false)
     } yield ()
 
-  def consume0(rabid: Rabid): Stream[IO, Unit] =
+  def timed[A](s: Stream[IO, A]): Stream[IO, A] =
     for {
-      stop <- Stream.eval(Signal[IO, Boolean](false))
-      channel <- Rabid.openChannel(rabid)
-      output <- Rabid.runChannelSync(consume1("cue", "root", stop))(channel)
-    } yield {
-      println(output.message)
-    }
+      scheduler <- Scheduler[IO](1)
+      a <- s.mergeHaltR(scheduler.sleep[IO](2.seconds).drain)
+    } yield a
+
+  def consume(rabid: Rabid): Stream[IO, Data] =
+    for {
+      _ <- Stream.eval(Rabid.publish(rabid)("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))))
+      (ack, messages) <- Rabid.consumeJson[Data](rabid)("ex", "cue", "root", true)
+      a <- messages
+      _ <- Stream.eval(ack(List(a)))
+    } yield a.data
 
   def connect: Stream[IO, Unit] =
     for {
-      scheduler <- Scheduler[IO](1)
-      _ <- Rabid.native("localhost", 5672)(consume0).mergeHaltR(scheduler.sleep[IO](2.seconds))
-    } yield ()
+      output <- timed(Rabid.native("localhost", 5672)(consume))
+    } yield println(output)
 }
 
 class ConnectSpec

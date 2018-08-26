@@ -82,8 +82,7 @@ object Connection
   : Stream[IO, Unit] = {
     for {
       channel0 <- Stream.eval(Channel.cons)
-      channelConnection0 <- Stream.eval(ChannelConnection.cons(0, channel0))
-      connection = Connection.cons(pool, channelConnection0)
+      connection = Connection.cons(pool, ChannelConnection(0, channel0, channel0.receive))
       loop = Process.loop(interpreter, execute, ProcessData.cons("connection", PState.Disconnected), connection)
       _ <- listen.through(a => loop(a).stream)
     } yield ()

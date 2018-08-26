@@ -63,16 +63,16 @@ object programs
       _ <- receiveMethod[Method.queue.DeclareOk]
     } yield PNext.Regular
 
-  def bindQueue(exchange: String, name: String, routingKey: String): ChannelA.Internal =
+  def bindQueue(exchange: String, queue: String, routingKey: String): ChannelA.Internal =
     for {
-      _ <- log(s"binding queue `$name` to `$exchange`")
-      _ <- sendMethod(method.queue.bind(exchange, name, routingKey))
+      _ <- log(s"binding queue `$queue` to `$exchange:$routingKey`")
+      _ <- sendMethod(method.queue.bind(exchange, queue, routingKey))
       _ <- receiveMethod[Method.queue.BindOk.type]
     } yield PNext.Regular
 
   def publish1(exchange: String, routingKey: String, data: String): ChannelA.Internal =
     for {
-      _ <- log(s"publishing to `$exchange` with `$routingKey`")
+      _ <- log(s"publishing to `$exchange:$routingKey`")
       _ <- sendMethod(method.basic.publish(exchange, routingKey))
       _ <- sendContent(ClassId.basic.id, data)
     } yield PNext.Regular
@@ -103,19 +103,33 @@ object programs
       _ <- Actions.output(a)
     } yield PNext.Regular
 
+  def deliver1: ChannelA.Step[Unit] =
+    for {
+      deliver <- receiveMethod[Method.basic.Deliver]
+      data <- receiveStringContent
+      _ <- Actions.output(ChannelOutput(Delivery(data, deliver.deliveryTag)))
+    } yield ()
+
   def deliverLoop(stop: Signal[IO, Boolean]): ChannelA.Internal =
     for {
-      _ <- receiveMethod[Method.basic.Deliver]
-      data <- receiveStringContent
-      _ <- Actions.output(ChannelOutput(data))
+      _ <- deliver1
       a <- deliverLoop(stop)
     } yield a
 
-  def consume(queue: String, stop: Signal[IO, Boolean]): ChannelA.Internal =
+  def consume(queue: String, stop: Signal[IO, Boolean], ack: Boolean): ChannelA.Internal =
     for {
       _ <- log(s"consuming from `$queue`")
-      _ <- sendMethod(method.basic.consume(queue, "", false))
+      _ <- sendMethod(method.basic.consume(queue, "", ack))
       _ <- receiveMethod[Method.basic.ConsumeOk]
       next <- deliverLoop(stop)
     } yield next
+
+  def ack1[A](message: Message[A]): ChannelA.Internal =
+    sendMethod(method.basic.ack(message.deliveryTag, false)).as(PNext.Regular)
+
+  def ack[A](messages: List[Message[A]]): ChannelA.Internal =
+    for {
+      _ <- log(s"acking `$messages`")
+      _ <- messages.traverse(ack1)
+    } yield PNext.Regular
 }

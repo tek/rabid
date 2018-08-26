@@ -51,7 +51,7 @@ object method
     def declare(name: String): Method.queue.Declare =
       Method.queue.Declare(0, ShortString(name), false, false, false, false, false, Table.empty)
 
-    def bind(queue: String, exchange: String, routingKey: String): Method.queue.Bind =
+    def bind(exchange: String, queue: String, routingKey: String): Method.queue.Bind =
       Method.queue.Bind(0, ShortString(queue), ShortString(exchange), ShortString(routingKey), false, Table.empty)
   }
 
@@ -65,5 +65,8 @@ object method
 
     def consume(queue: String, consumerTag: String, ack: Boolean): Method.basic.Consume =
       Method.basic.Consume(0, ShortString(queue), ShortString(consumerTag), false, !ack, false, false, Table.empty)
+
+    def ack(deliveryTag: Long, multiple: Boolean): Method.basic.Ack =
+      Method.basic.Ack(deliveryTag, multiple)
   }
 }
