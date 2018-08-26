@@ -1,6 +1,6 @@
 package rabid
 
-import cats.effect.{IO, Sync}
+import cats.effect.Sync
 import cats.implicits._
 import fs2.Pull
 import io.chrisdavenport.log4cats.Logger
