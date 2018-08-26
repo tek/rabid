@@ -15,6 +15,11 @@ object Signals
 
   def event
   (implicit ec: ExecutionContext)
+  : IO[Signal[IO, Boolean]] =
+    Signal[IO, Boolean](false)
+
+  def eventS
+  (implicit ec: ExecutionContext)
   : Stream[IO, Signal[IO, Boolean]] =
-    Stream.eval(Signal[IO, Boolean](false))
+    Stream.eval(event)
 }

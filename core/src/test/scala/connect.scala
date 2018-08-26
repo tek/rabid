@@ -8,9 +8,9 @@ import scala.concurrent.duration._
 
 import fs2.Stream
 import fs2.internal.ThreadFactories
+import cats.implicits._
 import cats.effect.IO
 import cats.free.Free
-import cats.implicits._
 import io.circe.generic.auto._
 import org.specs2.Specification
 
@@ -45,12 +45,12 @@ object ConnectSpec
     .provider()
     .openAsynchronousChannelGroup(20, ThreadFactories.named("rabbit", true))
 
-  def consume(rabid: Rabid): Stream[IO, Unit] =
+  def consume: RabidStream[Unit] =
     for {
-      _ <- Stream.eval(Rabid.publish(rabid)("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))))
-      (ack, messages) <- Rabid.consumeJson[Data](rabid)("ex", "cue", "root", true)
-      a <- messages
-      _ <- Stream.eval(ack(List(a)))
+      _ <- RabidStream.liftIO(rabid.publish("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))))
+      (ack, messages) <- RabidStream.liftIO(rabid.consumeJson[Data]("ex", "cue", "root", true))
+      a <- RabidStream.liftF(messages)
+      _ <- RabidStream.eval(ack(List(a)))
     } yield ()
 
   def connect: Stream[IO, Unit] =
