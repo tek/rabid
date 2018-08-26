@@ -33,5 +33,5 @@ object `package`
     for {
       stop <- RabidIO.liftF(Signals.event)
       channel <- Rabid.openChannel
-    } yield (Rabid.acker(channel), Rabid.consumeJsonIn[A](stop)(exchange, queue, route, ack).apply(channel))
+    } yield (a => Rabid.acker[A](a)(channel), Rabid.consumeJsonIn[A](stop)(exchange, queue, route, ack).apply(channel))
 }

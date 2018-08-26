@@ -9,13 +9,12 @@ import cats.implicits._
 import cats.data.State
 import cats.free.Free
 import cats.effect.IO
-import scodec.bits.ByteVector
 
 import connection.{Exchange, Input}
 
 case class Channel(
   exchange: Exchange[ChannelInput, ChannelOutput],
-  receive: Queue[IO, Either[ChannelInterrupt, ByteVector]],
+  receive: Queue[IO, ChannelMessage],
 )
 
 object Channel
@@ -24,7 +23,7 @@ object Channel
     for {
       in <- Queue.unbounded[IO, ChannelInput]
       out <- Queue.unbounded[IO, ChannelOutput]
-      receive <- Queue.unbounded[IO, Either[ChannelInterrupt, ByteVector]]
+      receive <- Queue.unbounded[IO, ChannelMessage]
     } yield Channel(Exchange(in, out), receive)
 
   type Prog = ChannelA.Step[PNext]

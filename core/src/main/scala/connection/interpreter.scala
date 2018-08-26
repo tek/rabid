@@ -17,7 +17,7 @@ import cats.effect.IO
 import cats.implicits._
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
-import channel.{ChannelConnection, Channel, ChannelInput}
+import channel.{ChannelConnection, Channel, ChannelInput, ChannelMessage}
 
 object Interpreter
 {
@@ -96,7 +96,7 @@ object Interpreter
     for {
       connection <- channelConnection(header.channel)
       _ <- ConnectionA.Effect.eval(log(s"sending to channel ${connection.number}"))
-      _ <- ConnectionA.Effect.eval(connection.receive.enqueue1(Right(body.payload)))
+      _ <- ConnectionA.Effect.eval(connection.receive.enqueue1(ChannelMessage.Rabbit(body.payload)))
     } yield ()
 
   def notifyChannel(number: Short, input: ChannelInput)

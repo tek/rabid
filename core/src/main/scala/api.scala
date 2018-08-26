@@ -13,7 +13,7 @@ import io.circe.syntax._
 import io.circe.parser._
 
 import connection.{Connection, Input}
-import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelInterrupt}
+import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage}
 
 case class Message[A](data: A, deliveryTag: Long)
 
@@ -92,11 +92,11 @@ object Rabid
       _ <- programs.consume(queue, stop, ack)
     } yield ()
 
-  def interruptChannel(channel: Channel)(message: ChannelInterrupt): IO[Unit] =
-    channel.receive.enqueue1(Left(message))
+  def ack[A](message: Message[A]): ChannelIO[Unit] =
+    ChannelIO(_.receive.enqueue1(ChannelMessage.Ack(message.deliveryTag, false)))
 
-  def acker[A](channel: Channel): List[Message[A]] => IO[Unit] =
-    messages => messages.map(a => ChannelInterrupt.Ack(a.deliveryTag, false)).traverse(interruptChannel(channel)).void
+  def acker[A]: List[Message[A]] => ChannelIO[Unit] =
+    _.traverse(ack).void
 
   def consumeJsonIn[A: Decoder]
   (stop: Signal[IO, Boolean])

@@ -30,7 +30,7 @@ object ChannelInput
 case class ChannelConnection(
   number: Short,
   channel: Channel,
-  receive: Queue[IO, Either[ChannelInterrupt, ByteVector]],
+  receive: Queue[IO, ChannelMessage],
 )
 
 case class ChannelData(number: Short, state: PState, buffer: Vector[ChannelInput])
@@ -43,10 +43,13 @@ object ChannelData
 
 case class Delivery(data: String, deliveryTag: Long)
 
-sealed trait ChannelInterrupt
+sealed trait ChannelMessage
 
-object ChannelInterrupt
+object ChannelMessage
 {
+  case class Rabbit(payload: ByteVector)
+  extends ChannelMessage
+
   case class Ack(deliveryTag: Long, multiple: Boolean)
-  extends ChannelInterrupt
+  extends ChannelMessage
 }

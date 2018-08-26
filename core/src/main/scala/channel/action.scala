@@ -4,7 +4,7 @@ package channel
 import scodec.{Encoder, Decoder, DecodeResult, Codec, Err}
 import scodec.bits.{ByteVector, BitVector}
 import scodec.codecs.utf8
-import cats.data.{EitherT, StateT}
+import cats.data.{EitherT, StateT, Kleisli}
 import cats.effect.IO
 import cats.free.Free
 import fs2.Pull
@@ -22,6 +22,7 @@ object ChannelA
   type Pull[A] = fs2.Pull[IO, Input, A]
   type State[A] = StateT[Pull, ChannelData, A]
   type Effect[A] = EitherT[State, Err, A]
+  type AKleisli[A] = Kleisli[Effect, ChannelConnection, A]
 
   case object SendAmqpHeader
   extends ChannelA[Unit]
@@ -122,6 +123,33 @@ object ChannelA
 
     def eval[A](fa: IO[A]): State[A] =
       pull(fs2.Pull.eval(fa))
+  }
+
+  object AKleisli
+  {
+    def apply[A](fa: ChannelConnection => Effect[A]): AKleisli[A] =
+      Kleisli(fa)
+
+    def pure[A](a: A): AKleisli[A] =
+      Kleisli.pure(a)
+
+    def liftF[A](fa: Effect[A]): AKleisli[A] =
+      Kleisli.liftF(fa)
+
+    def pull[A](fa: Pull[A]): AKleisli[A] =
+      liftF(Effect.pull(fa))
+
+    def eval[A](fa: IO[A]): AKleisli[A] =
+      liftF(Effect.eval(fa))
+
+    def attempt[A](a: scodec.Attempt[A]): AKleisli[A] =
+      liftF(Effect.attempt(a))
+
+    def applyEval[A](f: ChannelConnection => IO[A]): AKleisli[A] =
+      apply(c => Effect.eval(f(c)))
+
+    def inspect[A](f: ChannelConnection => A): AKleisli[A] =
+      Kleisli.ask[Effect, ChannelConnection].map(f)
   }
 }
 

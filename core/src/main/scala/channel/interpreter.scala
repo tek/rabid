@@ -9,84 +9,98 @@ import cats.effect.IO
 import cats.implicits._
 
 import connection.{Message, Input}
+import ChannelA.{Effect, AKleisli}
 
 object Interpreter
 {
-  def send(channel: ChannelConnection)(message: Message): ChannelA.Effect[Unit] =
+  def log(message: String): AKleisli[Unit] =
+    AKleisli(c => Effect.eval(Log.info[IO](s"channel ${c.number}", message)))
+
+  def channelNumber: AKleisli[Short] =
+    AKleisli.inspect(_.number)
+
+  def send(message: Message): AKleisli[Unit] =
     for {
-      _ <- ChannelA.Effect.eval(Log.info[IO](s"channel ${channel.number}", s"sending $message"))
-      _ <- ChannelA.Effect.pull(Pull.output1(Input.Rabbit(message)))
+      _ <- log(s"sending $message")
+      _ <- AKleisli.pull(Pull.output1(Input.Rabbit(message)))
     } yield ()
 
-  def sendContent(channel: ChannelConnection, classId: Short, payload: ByteVector): ChannelA.Effect[Unit] =
+  def sendMethod(payload: ByteVector): AKleisli[Unit] =
     for {
-      frames <- ChannelA.Effect.attempt(Message.Frame.content(channel.number, classId, payload))
-      _ <- frames.traverse(send(channel))
+      number <- channelNumber
+      _ <- send(Message.Frame.method(number, payload))
     } yield ()
 
-  def interruptProg: ChannelInterrupt => ChannelA.Step[Unit] = {
-    case ChannelInterrupt.Ack(deliveryTag, multiple) =>
-      Actions.sendMethod(method.basic.ack(deliveryTag, multiple))
-  }
-
-  def interrupt(connection: ChannelConnection)(job: ChannelInterrupt): ChannelA.Effect[Unit] =
-    interruptProg(job).foldMap(Process.interpretAttempt(interpreter(connection)))
-
-  def receive(connection: ChannelConnection): ChannelA.Effect[ByteVector] =
+  def sendContent(classId: Short, payload: ByteVector): AKleisli[Unit] =
     for {
-      input <- ChannelA.Effect.eval(connection.receive.dequeue1)
+      frames <- AKleisli(c => Effect.attempt(Message.Frame.content(c.number, classId, payload)))
+      _ <- frames.traverse(send)
+    } yield ()
+
+  def ack(deliveryTag: Long, multiple: Boolean): AKleisli[Unit] =
+    for {
+      interpret <- AKleisli(c => Effect.pure(Process.interpretAttempt(interpreter(c))))
+      _ <- AKleisli.liftF(Actions.sendMethod(method.basic.ack(deliveryTag, multiple)).foldMap(interpret))
+    } yield ()
+
+  def receive: AKleisli[ByteVector] =
+    for {
+      input <- AKleisli.applyEval(_.receive.dequeue1)
       a <- input match {
-        case Right(bytes) => ChannelA.Effect.pure(bytes)
-        case Left(job) =>
+        case ChannelMessage.Rabbit(bytes) => AKleisli.pure(bytes)
+        case ChannelMessage.Ack(deliveryTag, multiple) =>
           for {
-            _ <- interrupt(connection)(job)
-            a <- receive(connection)
+            _ <- ack(deliveryTag, multiple)
+            a <- receive
           } yield a
       }
     } yield a
 
-  def receiveContent(channel: ChannelConnection): ChannelA.Effect[ByteVector] =
+  def receiveContent: AKleisli[ByteVector] =
     for {
-      header <- receive(channel)
-      body <- receive(channel)
+      header <- receive
+      body <- receive
     } yield body
 
   def notifyConsumer(signal: Signal[IO, Option[Either[String, String]]], data: Either[String, String])
-  : ChannelA.Effect[Unit] =
-    ChannelA.Effect.eval(signal.set(Some(data)))
+  : AKleisli[Unit] =
+    AKleisli.eval(signal.set(Some(data)))
 
-  def output(connection: ChannelConnection)(data: ChannelOutput): ChannelA.Effect[Unit] =
-    ChannelA.Effect.eval(connection.channel.exchange.out.enqueue1(data))
+  def output(data: ChannelOutput): AKleisli[Unit] =
+    AKleisli.applyEval(_.channel.exchange.out.enqueue1(data))
 
-  def awaitSignal(signal: Signal[IO, Boolean]): ChannelA.Effect[Unit] =
-    ChannelA.Effect.eval(signal.discrete.filter(identity).take(1).compile.drain)
+  def awaitSignal(signal: Signal[IO, Boolean]): AKleisli[Unit] =
+    AKleisli.eval(signal.discrete.filter(identity).take(1).compile.drain)
 
-  def interpreter(connection: ChannelConnection): ChannelA ~> ChannelA.Effect =
-    new (ChannelA ~> ChannelA.Effect) {
-      def apply[A](action: ChannelA[A]): ChannelA.Effect[A] =
+  def interpreterK: ChannelA ~> AKleisli =
+    new (ChannelA ~> AKleisli) {
+      def apply[A](action: ChannelA[A]): AKleisli[A] =
         action match {
           case ChannelA.SendAmqpHeader =>
-            send(connection)(Message.header)
+            send(Message.header)
           case ChannelA.SendMethod(payload) =>
-            send(connection)(Message.Frame.method(connection.number, payload))
+            sendMethod(payload)
           case ChannelA.SendContent(classId, payload) =>
-            sendContent(connection, classId, payload)
+            sendContent(classId, payload)
           case ChannelA.Receive =>
-            receive(connection)
+            receive
           case ChannelA.ReceiveContent =>
-            receiveContent(connection)
+            receiveContent
           case ChannelA.NotifyConsumer(signal, data) =>
             notifyConsumer(signal, data)
           case ChannelA.Log(message) =>
-            ChannelA.Effect.eval(Log.info[IO](s"channel ${connection.number}", message))
+            log(message)
           case ChannelA.ConnectionOutput(comm) =>
-            ChannelA.Effect.pull(Pull.output1(comm))
+            AKleisli.pull(Pull.output1(comm))
           case ChannelA.ChannelOpened =>
-            ChannelA.Effect.unit
+            AKleisli.pure(())
           case ChannelA.Output(data) =>
-            output(connection)(data)
+            output(data)
           case ChannelA.Eval(fa) =>
-            ChannelA.Effect.eval(fa)
+            AKleisli.eval(fa)
         }
     }
+
+  def interpreter(connection: ChannelConnection): ChannelA ~> Effect =
+    interpreterK.andThen(λ[AKleisli ~> Effect](_(connection)))
 }
