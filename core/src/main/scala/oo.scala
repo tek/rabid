@@ -7,9 +7,9 @@ import fs2.Stream
 import fs2.async.mutable.{Queue => FQueue, Signal}
 import cats.implicits._
 import cats.effect.IO
-import io.circe.{Encoder, Decoder}
-import io.circe.syntax._
-import io.circe.parser._
+import _root_.io.circe.{Encoder, Decoder}
+import _root_.io.circe.syntax._
+import _root_.io.circe.parser._
 
 import connection.Input
 import channel.{Channel, programs}

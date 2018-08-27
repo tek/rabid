@@ -3,8 +3,8 @@ package rabid
 import cats.effect.Sync
 import cats.implicits._
 import fs2.Pull
-import io.chrisdavenport.log4cats.Logger
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import _root_.io.chrisdavenport.log4cats.Logger
+import _root_.io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 object Log
 {

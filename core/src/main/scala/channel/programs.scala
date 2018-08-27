@@ -4,8 +4,8 @@ package channel
 import fs2.async.mutable.Signal
 import cats.implicits._
 import cats.effect.IO
-import io.circe.Encoder
-import io.circe.syntax._
+import _root_.io.circe.Encoder
+import _root_.io.circe.syntax._
 
 import connection.Input
 import Actions._

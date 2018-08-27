@@ -8,9 +8,9 @@ import fs2.Stream
 import fs2.async.mutable.{Queue, Signal}
 import cats.implicits._
 import cats.effect.IO
-import io.circe.{Encoder, Decoder}
-import io.circe.syntax._
-import io.circe.parser._
+import _root_.io.circe.{Encoder, Decoder}
+import _root_.io.circe.syntax._
+import _root_.io.circe.parser._
 
 import connection.{Connection, Input}
 import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage}
@@ -112,4 +112,23 @@ object Rabid
           ChannelStream.liftF(Stream.empty)
       }
     } yield data
+}
+
+object io
+{
+  def publishJson[A: Encoder](exchange: String, routingKey: String)(messages: List[A])
+  (implicit ec: ExecutionContext)
+  : RabidIO[Unit] =
+    for {
+      channel <- Rabid.openChannel
+      _ <- RabidIO.liftF(messages.traverse(Rabid.publish1(exchange, routingKey)).void(channel))
+    } yield ()
+
+  def consumeJson[A: Decoder](exchange: String, queue: String, route: String, ack: Boolean)
+  (implicit ec: ExecutionContext)
+  : RabidIO[(List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
+    for {
+      stop <- RabidIO.liftF(Signals.event)
+      channel <- Rabid.openChannel
+    } yield (a => Rabid.acker[A](a)(channel), Rabid.consumeJsonIn[A](stop)(exchange, queue, route, ack).apply(channel))
 }

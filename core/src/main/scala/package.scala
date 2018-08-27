@@ -4,9 +4,8 @@ import scala.concurrent.ExecutionContext
 
 import fs2.Stream
 import cats.data.Kleisli
-import cats.implicits._
 import cats.effect.IO
-import io.circe.{Encoder, Decoder}
+import _root_.io.circe.{Encoder, Decoder}
 
 import channel.Channel
 
@@ -19,19 +18,13 @@ object `package`
   type ChannelIO[A] = Kleisli[IO, Channel, A]
   type ChannelStream[A] = Kleisli[Stream[IO, ?], Channel, A]
 
-  def publish[A: Encoder](exchange: String, routingKey: String)(messages: List[A])
+  def publishJson[A: Encoder](exchange: String, route: String)(messages: List[A])
   (implicit ec: ExecutionContext)
-  : RabidIO[Unit] =
-    for {
-      channel <- Rabid.openChannel
-      _ <- RabidIO.liftF(messages.traverse(Rabid.publish1(exchange, routingKey)).void(channel))
-    } yield ()
+  : RabidStream[Unit] =
+    RabidStream.liftIO(io.publishJson[A](exchange, route)(messages))
 
   def consumeJson[A: Decoder](exchange: String, queue: String, route: String, ack: Boolean)
   (implicit ec: ExecutionContext)
-  : RabidIO[(List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
-    for {
-      stop <- RabidIO.liftF(Signals.event)
-      channel <- Rabid.openChannel
-    } yield (a => Rabid.acker[A](a)(channel), Rabid.consumeJsonIn[A](stop)(exchange, queue, route, ack).apply(channel))
+  : RabidStream[(List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
+    RabidStream.liftIO(io.consumeJson[A](exchange, queue, route, ack))
 }

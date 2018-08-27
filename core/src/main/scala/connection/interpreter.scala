@@ -15,7 +15,7 @@ import cats.~>
 import cats.data.{EitherT, OptionT}
 import cats.effect.IO
 import cats.implicits._
-import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import _root_.io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import channel.{ChannelConnection, Channel, ChannelInput, ChannelMessage}
 

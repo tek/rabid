@@ -11,7 +11,7 @@ import fs2.internal.ThreadFactories
 import cats.implicits._
 import cats.effect.IO
 import cats.free.Free
-import io.circe.generic.auto._
+import _root_.io.circe.generic.auto._
 import org.specs2.Specification
 
 sealed trait ApiA[A]
@@ -39,25 +39,29 @@ object free
 
 case class Data(num: Int)
 
-object ConnectSpec
+object Consume
 {
-  implicit val tcpACG: AsynchronousChannelGroup = AsynchronousChannelProvider
-    .provider()
-    .openAsynchronousChannelGroup(20, ThreadFactories.named("rabbit", true))
-
-  def consume: RabidStream[Unit] =
+  def apply(): RabidStream[Unit] =
     for {
-      _ <- RabidStream.liftIO(rabid.publish("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))))
-      (ack, messages) <- RabidStream.liftIO(rabid.consumeJson[Data]("ex", "cue", "root", true))
+      _ <- rabid.publishJson("ex", "root")(List(Data(1), Data(2), Data(3), Data(4)))
+      (ack, messages) <- rabid.consumeJson[Data]("ex", "cue", "root", true)
       a <- RabidStream.liftF(messages)
       _ <- RabidStream.eval(ack(List(a)))
     } yield ()
-
-  def connect: Stream[IO, Unit] =
-    StreamUtil.timed(2.seconds)(Rabid.native("localhost", 5672)(consume))
 }
 
-class ConnectSpec
+object ConsumeSpec
+{
+  implicit val tcpACG: AsynchronousChannelGroup =
+    AsynchronousChannelProvider
+      .provider()
+      .openAsynchronousChannelGroup(1, ThreadFactories.named("rabbit", true))
+
+  def connect: Stream[IO, Unit] =
+    StreamUtil.timed(2.seconds)(Rabid.native("localhost", 5672)(Consume()))
+}
+
+class ConsumeSpec
 extends Specification
 {
   def is = s2"""
@@ -65,7 +69,7 @@ extends Specification
   """
 
   def connect = {
-    ConnectSpec.connect.compile.drain.unsafeRunSync()
+    ConsumeSpec.connect.compile.drain.unsafeRunSync()
     1 === 1
   }
 }
