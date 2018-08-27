@@ -1,7 +1,5 @@
 package rabid
 
-import java.nio.channels.AsynchronousChannelGroup
-
 import scala.concurrent.ExecutionContext
 
 import fs2.Stream
@@ -36,11 +34,19 @@ object Rabid
   def native[A]
   (host: String, port: Int)
   (consume: RabidStream[A])
-  (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
+  (implicit ec: ExecutionContext)
   : Stream[IO, A] =
     for {
-      (api, main) <- Connection.native(host, port)
-      a <- consume(api).concurrently(main)
+      connection <- Connection.native(host, port)
+      a <- run(consume)(connection)
+    } yield a
+
+  def run[A](consume: RabidStream[A])(connection: Connection)
+  (implicit ec: ExecutionContext)
+  : Stream[IO, A] =
+    for {
+      (rabid, main) <- Stream.eval(Connection.start(connection))
+      a <- consume(rabid).concurrently(main)
     } yield a
 
   def openChannel(implicit ec: ExecutionContext): RabidIO[Channel] =

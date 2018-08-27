@@ -2,12 +2,14 @@ package rabid
 package connection
 
 import java.nio.channels.AsynchronousChannelGroup
+import java.nio.channels.spi.AsynchronousChannelProvider
 
 import scala.concurrent.ExecutionContext
 import scala.collection.immutable.SortedMap
 
 import fs2.Stream
 import fs2.async.mutable.Queue
+import fs2.internal.ThreadFactories
 import cats.~>
 import cats.data.State
 import cats.free.Free
@@ -16,7 +18,7 @@ import cats.implicits._
 
 import channel.{ChannelConnection, Channel}
 
-case class Connection(
+case class ConnectionResources(
   pool: Connection.ChannelPool,
   channel0: ChannelConnection,
   channels: SortedMap[Short, ChannelConnection],
@@ -24,15 +26,21 @@ case class Connection(
   buffer: Vector[Input],
 )
 
-object Connection
+object ConnectionResources
 {
-  type ChannelPool = Queue[IO, Stream[IO, Input]]
-
   def cons(
     pool: Connection.ChannelPool,
     channelConnection0: ChannelConnection,
-  ): Connection =
-    Connection(pool, channelConnection0, SortedMap.empty, ConnectionState.Disconnected, Vector.empty)
+  ): ConnectionResources =
+    ConnectionResources(pool, channelConnection0, SortedMap.empty, ConnectionState.Disconnected, Vector.empty)
+}
+
+case class Connection(input: Stream[IO, Input], interpreter: Connection.Interpreter)
+
+object Connection
+{
+  type ChannelPool = Queue[IO, Stream[IO, Input]]
+  type Interpreter = ConnectionA ~> ConnectionA.Effect
 
   def operation: Input => ConnectionA.Step[PNext] = {
     case Input.Connected =>
@@ -75,14 +83,14 @@ object Connection
 
   def run(
     pool: Connection.ChannelPool,
-    interpreter: ConnectionA ~> ConnectionA.Effect,
+    interpreter: Interpreter,
     listen: Stream[IO, Input],
   )
   (implicit ec: ExecutionContext)
   : Stream[IO, Unit] = {
     for {
       channel0 <- Stream.eval(Channel.cons)
-      connection = Connection.cons(pool, ChannelConnection(0, channel0, channel0.receive))
+      connection = ConnectionResources.cons(pool, ChannelConnection(0, channel0, channel0.receive))
       loop = Process.loop(interpreter, execute, ProcessData.cons("connection", PState.Disconnected), connection)
       _ <- listen.through(a => loop(a).stream)
     } yield ()
@@ -103,21 +111,24 @@ object Connection
   : Stream[IO, Input] =
     listenChannels(pool).merge(rabbit).merge(channels.dequeue)
 
-  def using(rabbitInput: Stream[IO, Input])(interpreter: ConnectionA ~> ConnectionA.Effect)
+  def start(connection: Connection)
   (implicit ec: ExecutionContext)
   : IO[(Rabid, Stream[IO, Unit])] =
     for {
       pool <- Queue.unbounded[IO, Stream[IO, Input]]
-      input <- Queue.unbounded[IO, Input]
-    } yield (Rabid(input), run(pool, interpreter, listen(rabbitInput, pool, input)))
+      consumerInput <- Queue.unbounded[IO, Input]
+    } yield (Rabid(consumerInput), run(pool, connection.interpreter, listen(connection.input, pool, consumerInput)))
 
+  implicit def tcpACG: AsynchronousChannelGroup =
+    AsynchronousChannelProvider
+      .provider()
+      .openAsynchronousChannelGroup(1, ThreadFactories.named("rabbit", true))
 
   def native
   (host: String, port: Int)
-  (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
-  : Stream[IO, (Rabid, Stream[IO, Unit])] =
+  (implicit ec: ExecutionContext)
+  : Stream[IO, Connection] =
     for {
-      (rabbitInput, interpreter) <- Interpreter.native(host, port)
-      (rabid, main) <- Stream.eval(using(rabbitInput)(interpreter))
-    } yield (rabid, main)
+      (input, interpreter) <- Interpreter.native(host, port)
+    } yield Connection(input, interpreter)
 }

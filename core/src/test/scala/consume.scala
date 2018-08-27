@@ -1,18 +1,17 @@
 package rabid
 
-import java.nio.channels.AsynchronousChannelGroup
-import java.nio.channels.spi.AsynchronousChannelProvider
-
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 import fs2.Stream
-import fs2.internal.ThreadFactories
 import cats.implicits._
 import cats.effect.IO
 import cats.free.Free
 import _root_.io.circe.generic.auto._
 import org.specs2.Specification
+
+import connection.Connection
+import ConsumeEC.ec
 
 sealed trait ApiA[A]
 
@@ -39,6 +38,11 @@ object free
 
 case class Data(num: Int)
 
+object ConsumeEC
+{
+  implicit val ec: ExecutionContext = EC(20)
+}
+
 object Consume
 {
   def apply(): RabidStream[Unit] =
@@ -52,13 +56,11 @@ object Consume
 
 object ConsumeSpec
 {
-  implicit val tcpACG: AsynchronousChannelGroup =
-    AsynchronousChannelProvider
-      .provider()
-      .openAsynchronousChannelGroup(1, ThreadFactories.named("rabbit", true))
-
   def connect: Stream[IO, Unit] =
-    StreamUtil.timed(2.seconds)(Rabid.native("localhost", 5672)(Consume()))
+    for {
+      connection <- Connection.native("localhost", 5672)
+      _ <- StreamUtil.timed(2.seconds)(Rabid.run(Consume())(connection))
+    } yield ()
 }
 
 class ConsumeSpec

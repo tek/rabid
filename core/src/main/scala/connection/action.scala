@@ -17,7 +17,7 @@ object ConnectionA
   type Attempt[A] = scodec.Attempt[ConnectionA[A]]
   type Step[A] = Free[Attempt, A]
   type Pull[A] = fs2.Pull[IO, Nothing, A]
-  type State[A] = StateT[Pull, Connection, A]
+  type State[A] = StateT[Pull, ConnectionResources, A]
   type Effect[A] = EitherT[State, Err, A]
 
   case class Send(payload: Message)
@@ -102,10 +102,10 @@ object ConnectionA
     def pure[A](a: A): State[A] =
       StateT.liftF(Pull.pure(a))
 
-    def inspect[A](f: Connection => A): State[A] =
+    def inspect[A](f: ConnectionResources => A): State[A] =
       StateT.inspect(f)
 
-    def modify(f: Connection => Connection): State[Unit] =
+    def modify(f: ConnectionResources => ConnectionResources): State[Unit] =
       StateT.modify(f)
 
     def pull[A](p: Pull[A]): State[A] =
