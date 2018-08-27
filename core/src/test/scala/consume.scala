@@ -32,7 +32,7 @@ object Consume
 
 object ConsumeSpec
 {
-  def connect: Stream[IO, Unit] =
+  def apply(): Stream[IO, Unit] =
     for {
       connection <- Connection.native("localhost", 5672)
       _ <- StreamUtil.timed(2.seconds)(Rabid.run(Consume())(connection))
@@ -43,11 +43,11 @@ class ConsumeSpec
 extends Specification
 {
   def is = s2"""
-  connect $connect
+  consume $consume
   """
 
-  def connect = {
-    ConsumeSpec.connect.compile.drain.unsafeRunSync()
+  def consume = {
+    ConsumeSpec().compile.drain.unsafeRunSync()
     1 === 1
   }
 }
