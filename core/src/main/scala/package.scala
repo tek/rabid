@@ -4,6 +4,7 @@ import scala.concurrent.ExecutionContext
 
 import fs2.Stream
 import cats.data.Kleisli
+import cats.implicits._
 import cats.effect.IO
 import _root_.io.circe.{Encoder, Decoder}
 
@@ -17,6 +18,13 @@ object `package`
   type ChannelOp[F[_], A] = Kleisli[F, Channel, A]
   type ChannelIO[A] = Kleisli[IO, Channel, A]
   type ChannelStream[A] = Kleisli[Stream[IO, ?], Channel, A]
+
+  def openChannel(implicit ec: ExecutionContext): RabidIO[Channel] =
+    Rabid.openChannel
+
+  def publishJsonIn[A: Encoder](exchange: String, route: String)(messages: List[A])
+  : ChannelStream[Unit] =
+    ChannelStream.liftIO(messages.traverse(Rabid.publish1(exchange, route)).void)
 
   def publishJson[A: Encoder](exchange: String, route: String)(messages: List[A])
   (implicit ec: ExecutionContext)
