@@ -199,12 +199,17 @@ object Actions
   def notifyConsumer(signal: Signal[IO, Option[Either[String, String]]], data: Either[String, String]): Step[Unit] =
     liftF(NotifyConsumer(signal, data))
 
-  def receiveContent: Step[ByteVector] = liftF(ReceiveContent)
+  def receiveContent: Step[ByteVector] =
+    for {
+      content <- liftF(ReceiveContent)
+      _ <- log(s"received content $content")
+    } yield content
 
   def receiveStringContent: Step[String] =
     for {
       bytes <- liftF(ReceiveContent)
       data <- fromAttempt(utf8.decode(BitVector(bytes)))
+      _ <- log(s"received string content ${data.value}")
     } yield data.value
 
   def log[A](message: A): Step[Unit] =
