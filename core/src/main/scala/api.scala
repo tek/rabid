@@ -109,8 +109,10 @@ object Rabid
   (exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   : ChannelStream[Message[A]] =
     for {
-      _ <- consumerChannel(s"consume json from $exchange:$queue:$route", consumeProg(stop)(exchange, queue, route, ack))
-      output <- consumeChannel
+      output <- consumerChannel(
+        s"consume json from ${exchange.name}:${queue.name}:$route",
+        consumeProg(stop)(exchange, queue, route, ack)
+      )
       data <- decode[A](output.message.data) match {
         case Right(a) => ChannelStream.pure(Message(a, output.message.deliveryTag))
         case Left(error) =>
