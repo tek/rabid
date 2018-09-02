@@ -6,14 +6,24 @@ import fs2.Stream
 import fs2.async.mutable.{Queue, Signal}
 import cats.implicits._
 import cats.effect.IO
-import _root_.io.circe.{Encoder, Decoder}
+import _root_.io.circe.{Encoder, Decoder, Error}
 import _root_.io.circe.syntax._
 import _root_.io.circe.parser._
 
 import connection.{Connection, Input, ConnectionConfig}
 import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage, ExchangeConf, QueueConf}
+import channel.{Delivery, DeliveryTag}
 
-case class Message[A](data: A, deliveryTag: Long)
+sealed trait Consume[A]
+
+object Consume
+{
+  case class Message[A](data: A, tag: DeliveryTag)
+  extends Consume[A]
+
+  case class JsonError[A](delivery: Delivery, error: Error)
+  extends Consume[A]
+}
 
 object Api
 {
@@ -98,28 +108,27 @@ object Rabid
       _ <- programs.consume(queue.name, stop, ack)
     } yield ()
 
-  def ack[A](message: Message[A]): ChannelIO[Unit] =
-    ChannelIO(_.receive.enqueue1(ChannelMessage.Ack(message.deliveryTag, false)))
+  def ack[A](tag: DeliveryTag): ChannelIO[Unit] =
+    ChannelIO(_.receive.enqueue1(ChannelMessage.Ack(tag.data, false)))
 
-  def acker[A]: List[Message[A]] => ChannelIO[Unit] =
+  def acker[A]: List[DeliveryTag] => ChannelIO[Unit] =
     _.traverse(ack).void
 
   def consumeJsonIn[A: Decoder]
   (stop: Signal[IO, Boolean])
   (exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
-  : ChannelStream[Message[A]] =
+  : ChannelStream[Consume[A]] =
     for {
       output <- consumerChannel(
         s"consume json from ${exchange.name}:${queue.name}:$route",
         consumeProg(stop)(exchange, queue, route, ack)
       )
       data <- decode[A](output.message.data) match {
-        case Right(a) => ChannelStream.pure(Message(a, output.message.deliveryTag))
+        case Right(a) => ChannelStream.pure(Consume.Message(a, output.message.tag))
         case Left(error) =>
           for {
-            _ <- ChannelStream.eval(Log.error[IO]("consumeJsonIn", f"failed to decode json message: $error: $output"))
-            a <- ChannelStream.liftF[Message[A]](Stream.empty)
-          } yield a
+            _ <- ChannelStream.eval(Log.error[IO]("consume.json", f"failed to decode json message: $error: $output"))
+          } yield Consume.JsonError[A](output.message, error)
       }
     } yield data
 }
@@ -136,7 +145,7 @@ object io
 
   def consumeJson[A: Decoder](exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   (implicit ec: ExecutionContext)
-  : RabidIO[(List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
+  : RabidIO[(List[DeliveryTag] => IO[Unit], Stream[IO, Consume[A]])] =
     for {
       stop <- RabidIO.liftF(Signals.event)
       channel <- Rabid.openChannel

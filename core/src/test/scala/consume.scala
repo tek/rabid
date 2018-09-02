@@ -10,17 +10,19 @@ import _root_.io.circe.generic.auto._
 import org.specs2.Specification
 
 import connection.{Connection, ConnectionConfig}
-import channel.{ExchangeConf, QueueConf}
+import channel.{ExchangeConf, QueueConf, Delivery, DeliveryTag}
 import ConsumeEC.ec
 
 case class Data(num: Int)
+
+case class DataError(data: String, tag: DeliveryTag, message: String)
 
 object ConsumeEC
 {
   implicit val ec: ExecutionContext = EC(20)
 }
 
-object Consume
+object Consumer
 {
   def apply(): RabidStream[Unit] =
     for {
@@ -28,9 +30,19 @@ object Consume
       _ <- RabidStream.liftF(
         rabid.publishJsonIn("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))).apply(pubChannel)
       )
-      (ack, messages) <- rabid.consumeJson[Data](ExchangeConf("ex", "topic", false), QueueConf("cue", true), "root", true)
-      a <- RabidStream.liftF(messages)
-      _ <- RabidStream.eval(ack(if (a.data.num == 3) Nil else List(a)))
+      (ack, messages) <- rabid.consumeJson[Data](
+        ExchangeConf("ex", "topic", false), QueueConf("cue", true), "root", true
+      )
+      item <- RabidStream.liftF(messages)
+      _ <- item match {
+        case Consume.Message(_, tag) =>
+          RabidStream.eval(ack(List(tag)))
+        case Consume.JsonError(Delivery(data, tag), error) =>
+          RabidStream.liftF(
+            rabid.publishJsonIn("ex", "root.error")(List(DataError(data, tag, error.toString)))
+              .apply(pubChannel)
+          )
+      }
     } yield ()
 }
 
@@ -41,7 +53,7 @@ object ConsumeSpec
   def apply(): Stream[IO, Unit] =
     for {
       connection <- Connection.native("localhost", 5672)
-      _ <- StreamUtil.timed(2.seconds)(Rabid.run(Consume())(connection, conf))
+      _ <- StreamUtil.timed(2.seconds)(Rabid.run(Consumer())(connection, conf))
     } yield ()
 }
 

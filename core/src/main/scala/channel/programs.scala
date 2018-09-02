@@ -107,7 +107,7 @@ object programs
     for {
       deliver <- receiveMethod[Method.basic.Deliver]
       data <- receiveStringContent
-      _ <- Actions.output(ChannelOutput(Delivery(data, deliver.deliveryTag)))
+      _ <- Actions.output(ChannelOutput(Delivery(data, DeliveryTag(deliver.deliveryTag))))
     } yield ()
 
   def deliverLoop(stop: Signal[IO, Boolean]): ChannelA.Internal =
@@ -124,10 +124,10 @@ object programs
       next <- deliverLoop(stop)
     } yield next
 
-  def ack1[A](message: Message[A]): ChannelA.Internal =
-    sendMethod(method.basic.ack(message.deliveryTag, false)).as(PNext.Regular)
+  def ack1[A](tag: DeliveryTag): ChannelA.Internal =
+    sendMethod(method.basic.ack(tag.data, false)).as(PNext.Regular)
 
-  def ack[A](messages: List[Message[A]]): ChannelA.Internal =
+  def ack[A](messages: List[DeliveryTag]): ChannelA.Internal =
     for {
       _ <- log(s"acking `$messages`")
       _ <- messages.traverse(ack1)

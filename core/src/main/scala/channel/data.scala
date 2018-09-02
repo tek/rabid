@@ -41,7 +41,9 @@ object ChannelData
     ChannelData(number, state, Vector.empty)
 }
 
-case class Delivery(data: String, deliveryTag: Long)
+case class DeliveryTag(data: Long)
+
+case class Delivery(data: String, tag: DeliveryTag)
 
 sealed trait ChannelMessage
 
@@ -50,7 +52,7 @@ object ChannelMessage
   case class Rabbit(payload: ByteVector)
   extends ChannelMessage
 
-  case class Ack(deliveryTag: Long, multiple: Boolean)
+  case class Ack(tag: Long, multiple: Boolean)
   extends ChannelMessage
 }
 
