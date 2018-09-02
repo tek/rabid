@@ -2,6 +2,7 @@ package rabid
 
 import scodec.Codec
 import scodec.codecs._
+import scodec.bits.BinStringSyntax
 
 import Field.{ShortString, LongString, Table, Bool}
 import Field.codecs._
@@ -196,11 +197,11 @@ object Method
       ticket: Short,
       exchange: ShortString,
       tpe: ShortString,
-      passive: Boolean,
-      durable: Boolean,
-      internal: Boolean,
-      autoDelete: Boolean,
       nowait: Boolean,
+      autoDelete: Boolean,
+      internal: Boolean,
+      durable: Boolean,
+      passive: Boolean,
       arguments: Table,
     )
     extends Method
@@ -208,7 +209,8 @@ object Method
     object Declare
     {
       implicit val codec: Codec[Declare] =
-        (short16 :: shortstr :: shortstr :: bool :: bool :: bool :: bool :: bool :: table).as[Declare]
+        (short16 :: shortstr :: shortstr :: constant(bin"000") :: bool :: bool :: bool :: bool :: bool :: table)
+          .as[Declare]
 
       implicit val ClassId_Declare: ClassId[Declare] =
         ClassId.exchange
@@ -236,11 +238,11 @@ object Method
     case class Declare(
       ticket: Short,
       queue: ShortString,
-      passive: Boolean,
-      durable: Boolean,
-      exclusive: Boolean,
-      autoDelete: Boolean,
       nowait: Boolean,
+      autoDelete: Boolean,
+      exclusive: Boolean,
+      durable: Boolean,
+      passive: Boolean,
       arguments: Table,
     )
     extends Method
@@ -248,7 +250,7 @@ object Method
     object Declare
     {
       implicit val codec: Codec[Declare] =
-        (short16 :: shortstr :: bool :: bool :: bool :: bool :: bool :: table).as[Declare]
+        (short16 :: shortstr :: constant(bin"000") :: bool :: bool :: bool :: bool :: bool :: table).as[Declare]
 
       implicit val ClassId_Declare: ClassId[Declare] =
         ClassId.queue

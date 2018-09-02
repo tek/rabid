@@ -8,7 +8,7 @@ import cats.implicits._
 import cats.effect.IO
 import _root_.io.circe.{Encoder, Decoder}
 
-import channel.Channel
+import channel.{Channel, ExchangeConf, QueueConf}
 
 object `package`
 {
@@ -31,7 +31,7 @@ object `package`
   : RabidStream[Unit] =
     RabidStream.liftIO(io.publishJson[A](exchange, route)(messages))
 
-  def consumeJson[A: Decoder](exchange: String, queue: String, route: String, ack: Boolean)
+  def consumeJson[A: Decoder](exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   (implicit ec: ExecutionContext)
   : RabidStream[(List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
     RabidStream.liftIO(io.consumeJson[A](exchange, queue, route, ack))

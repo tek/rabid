@@ -53,3 +53,7 @@ object ChannelMessage
   case class Ack(deliveryTag: Long, multiple: Boolean)
   extends ChannelMessage
 }
+
+case class ExchangeConf(name: String, tpe: String, durable: Boolean)
+
+case class QueueConf(name: String, durable: Boolean)

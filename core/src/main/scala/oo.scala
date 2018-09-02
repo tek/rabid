@@ -12,7 +12,7 @@ import _root_.io.circe.syntax._
 import _root_.io.circe.parser._
 
 import connection.Input
-import channel.{Channel, programs}
+import channel.{Channel, programs, ExchangeConf, QueueConf}
 
 case class Queue(name: String, channel: Channel)
 {
@@ -54,23 +54,23 @@ case class BoundQueue(exchange: Exchange, queue: Queue, routingKey: String, chan
 
 case class ChannelApi(channel: Channel)
 {
-  def exchange(name: String): Stream[IO, Exchange] =
+  def exchange(exchange: ExchangeConf): Stream[IO, Exchange] =
     for {
-      _ <- Api.declareExchange(name)(channel)
-    } yield Exchange(name, channel)
+      _ <- Api.declareExchange(exchange)(channel)
+    } yield Exchange(exchange.name, channel)
 
-  def queue(name: String): Stream[IO, Queue] =
-    Api.send(s"declare queue `$name`", programs.declareQueue(name))(channel).as(Queue(name, channel))
+  def queue(conf: QueueConf): Stream[IO, Queue] =
+    Api.send(s"declare queue `${conf.name}`", programs.declareQueue(conf))(channel).as(Queue(conf.name, channel))
 
-  def boundQueue(exchangeName: String, queueName: String, routingKey: String): Stream[IO, BoundQueue] =
+  def boundQueue(exchange: ExchangeConf, queue: QueueConf, routingKey: String): Stream[IO, BoundQueue] =
     for {
-      ex <- exchange(exchangeName)
-      q <- queue(queueName)
-      _ <- Api.bindQueue(exchangeName, queueName, routingKey)(channel)
+      ex <- this.exchange(exchange)
+      q <- this.queue(queue)
+      _ <- Api.bindQueue(exchange.name, queue.name, routingKey)(channel)
     } yield BoundQueue(ex, q, routingKey, channel)
 
   def simpleQueue(name: String): Stream[IO, BoundQueue] =
-    boundQueue(name, name, name)
+    boundQueue(ExchangeConf(name, "topic", true), QueueConf(name, true), name)
 }
 
 case class Rabid(queue: FQueue[IO, Input])

@@ -11,7 +11,7 @@ import _root_.io.circe.syntax._
 import _root_.io.circe.parser._
 
 import connection.{Connection, Input, ConnectionConfig}
-import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage}
+import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage, ExchangeConf, QueueConf}
 
 case class Message[A](data: A, deliveryTag: Long)
 
@@ -20,8 +20,8 @@ object Api
   def send(name: String, thunk: Channel.Prog)(channel: Channel): Stream[IO, Unit] =
     Stream.eval(channel.exchange.in.enqueue1(ChannelInput.Prog(name, thunk)))
 
-  def declareExchange(name: String): Channel => Stream[IO, Unit] =
-    send(s"declare exchange `$name`", programs.declareExchange(name))
+  def declareExchange(conf: ExchangeConf): Channel => Stream[IO, Unit] =
+    send(s"declare exchange `${conf.name}`", programs.declareExchange(conf))
 
   def bindQueue(exchange: String, queue: String, routingKey: String): Channel => Stream[IO, Unit] =
     send(s"bind queue `$queue`", programs.bindQueue(exchange, queue, routingKey))
@@ -89,13 +89,13 @@ object Rabid
     )
 
   def consumeProg(stop: Signal[IO, Boolean])
-  (exchange: String, queue: String, route: String, ack: Boolean)
+  (exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   : ChannelA.Step[Unit] =
     for {
       _ <- programs.declareExchange(exchange)
       _ <- programs.declareQueue(queue)
-      _ <- programs.bindQueue(exchange, queue, route)
-      _ <- programs.consume(queue, stop, ack)
+      _ <- programs.bindQueue(exchange.name, queue.name, route)
+      _ <- programs.consume(queue.name, stop, ack)
     } yield ()
 
   def ack[A](message: Message[A]): ChannelIO[Unit] =
@@ -106,7 +106,7 @@ object Rabid
 
   def consumeJsonIn[A: Decoder]
   (stop: Signal[IO, Boolean])
-  (exchange: String, queue: String, route: String, ack: Boolean)
+  (exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   : ChannelStream[Message[A]] =
     for {
       _ <- consumerChannel(s"consume json from $exchange:$queue:$route", consumeProg(stop)(exchange, queue, route, ack))
@@ -130,7 +130,7 @@ object io
       _ <- RabidIO.liftF(messages.traverse(Rabid.publish1(exchange, routingKey)).void(channel))
     } yield ()
 
-  def consumeJson[A: Decoder](exchange: String, queue: String, route: String, ack: Boolean)
+  def consumeJson[A: Decoder](exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   (implicit ec: ExecutionContext)
   : RabidIO[(List[Message[A]] => IO[Unit], Stream[IO, Message[A]])] =
     for {

@@ -49,17 +49,17 @@ object programs
       _ <- connectionOutput(Input.ChannelOpened(number, openOk.channelId.data))
     } yield PNext.Regular
 
-  def declareExchange(name: String): ChannelA.Internal =
+  def declareExchange(conf: ExchangeConf): ChannelA.Internal =
     for {
-      _ <- log(s"declaring exchange `$name`")
-      _ <- sendMethod(method.exchange.declare(name))
+      _ <- log(s"declaring exchange `${conf.name}`")
+      _ <- sendMethod(method.exchange.declare(conf))
       _ <- receiveMethod[Method.exchange.DeclareOk.type]
     } yield PNext.Regular
 
-  def declareQueue(name: String): ChannelA.Internal =
+  def declareQueue(conf: QueueConf): ChannelA.Internal =
     for {
-      _ <- log(s"declaring queue `$name`")
-      _ <- sendMethod(method.queue.declare(name))
+      _ <- log(s"declaring queue `${conf.name}`")
+      _ <- sendMethod(method.queue.declare(conf))
       _ <- receiveMethod[Method.queue.DeclareOk]
     } yield PNext.Regular
 

@@ -10,6 +10,7 @@ import _root_.io.circe.generic.auto._
 import org.specs2.Specification
 
 import connection.{Connection, ConnectionConfig}
+import channel.{ExchangeConf, QueueConf}
 import ConsumeEC.ec
 
 case class Data(num: Int)
@@ -27,7 +28,7 @@ object Consume
       _ <- RabidStream.liftF(
         rabid.publishJsonIn("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))).apply(pubChannel)
       )
-      (ack, messages) <- rabid.consumeJson[Data]("ex", "cue", "root", true)
+      (ack, messages) <- rabid.consumeJson[Data](ExchangeConf("ex", "topic", false), QueueConf("cue", true), "root", true)
       a <- RabidStream.liftF(messages)
       _ <- RabidStream.eval(ack(if (a.data.num == 3) Nil else List(a)))
     } yield ()
@@ -35,7 +36,7 @@ object Consume
 
 object ConsumeSpec
 {
-  val conf = ConnectionConfig("test", "test", "/test")
+  val conf = ConnectionConfig("admin", "admin1", "sprcom")
 
   def apply(): Stream[IO, Unit] =
     for {

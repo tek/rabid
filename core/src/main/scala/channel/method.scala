@@ -32,15 +32,15 @@ object method
 
   object exchange
   {
-    def declare(name: String): Method.exchange.Declare =
+    def declare(conf: ExchangeConf): Method.exchange.Declare =
       Method.exchange.Declare(
         0,
-        ShortString(name),
-        ShortString("direct"),
+        ShortString(conf.name),
+        ShortString(conf.tpe),
         false,
         false,
         false,
-        false,
+        conf.durable,
         false,
         Table.empty,
       )
@@ -48,8 +48,8 @@ object method
 
   object queue
   {
-    def declare(name: String): Method.queue.Declare =
-      Method.queue.Declare(0, ShortString(name), false, false, false, false, false, Table.empty)
+    def declare(conf: QueueConf): Method.queue.Declare =
+      Method.queue.Declare(0, ShortString(conf.name), false, false, false, conf.durable, false, Table.empty)
 
     def bind(exchange: String, queue: String, routingKey: String): Method.queue.Bind =
       Method.queue.Bind(0, ShortString(queue), ShortString(exchange), ShortString(routingKey), false, Table.empty)
