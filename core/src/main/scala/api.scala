@@ -10,7 +10,7 @@ import _root_.io.circe.{Encoder, Decoder}
 import _root_.io.circe.syntax._
 import _root_.io.circe.parser._
 
-import connection.{Connection, Input}
+import connection.{Connection, Input, ConnectionConfig}
 import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage}
 
 case class Message[A](data: A, deliveryTag: Long)
@@ -32,20 +32,20 @@ case class Rabid(queue: Queue[IO, Input])
 object Rabid
 {
   def native[A]
-  (host: String, port: Int)
+  (host: String, port: Int, conf: ConnectionConfig)
   (consume: RabidStream[A])
   (implicit ec: ExecutionContext)
   : Stream[IO, A] =
     for {
       connection <- Connection.native(host, port)
-      a <- run(consume)(connection)
+      a <- run(consume)(connection, conf)
     } yield a
 
-  def run[A](consume: RabidStream[A])(connection: Connection)
+  def run[A](consume: RabidStream[A])(connection: Connection, conf: ConnectionConfig)
   (implicit ec: ExecutionContext)
   : Stream[IO, A] =
     for {
-      (rabid, main) <- Stream.eval(Connection.start(connection))
+      (rabid, main) <- Stream.eval(Connection.start(connection, conf))
       a <- consume(rabid).concurrently(main)
     } yield a
 

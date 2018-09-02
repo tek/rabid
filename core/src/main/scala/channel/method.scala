@@ -7,11 +7,11 @@ object method
 {
   object connection
   {
-    def startOk(caps: Table): Method.connection.StartOk =
+    def startOk(user: String, password: String, caps: Table): Method.connection.StartOk =
       Method.connection.StartOk(
         caps,
         ShortString("PLAIN"),
-        LongString("\u0000test\u0000test"),
+        LongString(s"\u0000${user}\u0000${password}"),
         ShortString("en_US.UTF-8"),
       )
 
@@ -20,8 +20,8 @@ object method
         Method.connection.TuneOk(channelMax, frameMax, heartbeat)
     }
 
-    def open: Method.connection.Open =
-      Method.connection.Open(ShortString("/test"), ShortString(""), Bool(false))
+    def open(vhost: String): Method.connection.Open =
+      Method.connection.Open(ShortString(vhost), ShortString(""), Bool(false))
   }
 
   object channel

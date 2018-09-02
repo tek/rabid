@@ -35,6 +35,8 @@ object ConnectionResources
     ConnectionResources(pool, channelConnection0, SortedMap.empty, ConnectionState.Disconnected, Vector.empty)
 }
 
+case class ConnectionConfig(user: String, password: String, vhost: String)
+
 case class Connection(input: Stream[IO, Input], interpreter: Connection.Interpreter)
 
 object Connection
@@ -55,11 +57,11 @@ object Connection
       programs.channelOpened(number, id)
   }
 
-  def disconnected(input: Input): State[ProcessData[Input], ConnectionA.Step[PNext]] =
+  def disconnected(conf: ConnectionConfig)(input: Input): State[ProcessData[Input], ConnectionA.Step[PNext]] =
     for {
       _ <- Process.buffer(input)
       _ <- Process.transition(PState.Connecting)
-    } yield programs.connect
+    } yield programs.connect(conf.user, conf.password, conf.vhost)
 
   def connecting: Input => State[ProcessData[Input], ConnectionA.Step[PNext]] = {
     case Input.Connected =>
@@ -72,9 +74,9 @@ object Connection
       Process.bufferOnly(a)
   }
 
-  def execute: PState => Input => State[ProcessData[Input], ConnectionA.Step[PNext]] = {
+  def execute(conf: ConnectionConfig): PState => Input => State[ProcessData[Input], ConnectionA.Step[PNext]] = {
     case PState.Disconnected =>
-      disconnected
+      disconnected(conf)
     case PState.Connecting =>
       connecting
     case PState.Connected =>
@@ -85,13 +87,14 @@ object Connection
     pool: Connection.ChannelPool,
     interpreter: Interpreter,
     listen: Stream[IO, Input],
+    conf: ConnectionConfig,
   )
   (implicit ec: ExecutionContext)
   : Stream[IO, Unit] = {
     for {
       channel0 <- Stream.eval(Channel.cons)
       connection = ConnectionResources.cons(pool, ChannelConnection(0, channel0, channel0.receive))
-      loop = Process.loop(interpreter, execute, ProcessData.cons("connection", PState.Disconnected), connection)
+      loop = Process.loop(interpreter, execute(conf), ProcessData.cons("connection", PState.Disconnected), connection)
       _ <- listen.through(a => loop(a).stream)
     } yield ()
   }
@@ -111,13 +114,15 @@ object Connection
   : Stream[IO, Input] =
     listenChannels(pool).merge(rabbit).merge(channels.dequeue)
 
-  def start(connection: Connection)
+  def start(connection: Connection, conf: ConnectionConfig)
   (implicit ec: ExecutionContext)
   : IO[(Rabid, Stream[IO, Unit])] =
     for {
       pool <- Queue.unbounded[IO, Stream[IO, Input]]
       consumerInput <- Queue.unbounded[IO, Input]
-    } yield (Rabid(consumerInput), run(pool, connection.interpreter, listen(connection.input, pool, consumerInput)))
+    } yield {
+      (Rabid(consumerInput), run(pool, connection.interpreter, listen(connection.input, pool, consumerInput), conf)) 
+    }
 
   implicit def tcpACG: AsynchronousChannelGroup =
     AsynchronousChannelProvider

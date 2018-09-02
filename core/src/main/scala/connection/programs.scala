@@ -32,9 +32,11 @@ object programs
         ChannelInput.Internal("listen in control channel", channel.programs.controlListen)))
     } yield PNext.Debuffer
 
-  def connect: ConnectionA.Step[PNext] =
+  def connect(user: String, password: String, vhost: String): ConnectionA.Step[PNext] =
     for {
       _ <- ConnectionA.liftF(ConnectionA.StartControlChannel)
-      _ <- ConnectionA.liftF(ConnectionA.RunInControlChannel(ChannelInput.Internal("connect to server", channel.programs.connect)))
+      _ <- ConnectionA.liftF(ConnectionA.RunInControlChannel(
+        ChannelInput.Internal("connect to server", channel.programs.connect(user, password, vhost))
+      ))
     } yield PNext.Regular
 }

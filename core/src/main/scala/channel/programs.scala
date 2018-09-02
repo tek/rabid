@@ -12,14 +12,14 @@ import Actions._
 
 object programs
 {
-  def connect: ChannelA.Internal =
+  def connect(user: String, password: String, vhost: String): ChannelA.Internal =
     for {
       _ <- sendAmqpHeader
       start <- receiveMethod[Method.connection.Start]
-      _ <- sendMethod(method.connection.startOk(start.serverProperties))
+      _ <- sendMethod(method.connection.startOk(user, password, start.serverProperties))
       tune <- receiveMethod[Method.connection.Tune]
       _ <- sendMethod(method.connection.tuneOk(tune))
-      _ <- sendMethod(method.connection.open)
+      _ <- sendMethod(method.connection.open(vhost))
       openOk <- receiveMethod[Method.connection.OpenOk]
       _ <- Actions.connectionOutput(Input.Connected)
     } yield PNext.Debuffer
