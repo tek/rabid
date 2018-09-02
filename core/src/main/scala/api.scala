@@ -114,8 +114,10 @@ object Rabid
       data <- decode[A](output.message.data) match {
         case Right(a) => ChannelStream.pure(Message(a, output.message.deliveryTag))
         case Left(error) =>
-          println(error)
-          ChannelStream.liftF(Stream.empty)
+          for {
+            _ <- ChannelStream.eval(Log.error[IO]("consumeJsonIn", f"failed to decode json message: $error: $output"))
+            a <- ChannelStream.liftF[Message[A]](Stream.empty)
+          } yield a
       }
     } yield data
 }
