@@ -49,6 +49,8 @@ object Connection
       Free.pure(PNext.Regular)
     case Input.Rabbit(message) =>
       programs.sendToRabbit(message)
+    case Input.ChannelReceive(FrameHeader(FrameType.Heartbeat, _, _), _) =>
+      programs.sendToRabbit(Message.heartbeat)
     case Input.ChannelReceive(header, body) =>
       programs.sendToChannel(header, body)
     case Input.OpenChannel(request) =>
@@ -121,7 +123,7 @@ object Connection
       pool <- Queue.unbounded[IO, Stream[IO, Input]]
       consumerInput <- Queue.unbounded[IO, Input]
     } yield {
-      (Rabid(consumerInput), run(pool, connection.interpreter, listen(connection.input, pool, consumerInput), conf)) 
+      (Rabid(consumerInput), run(pool, connection.interpreter, listen(connection.input, pool, consumerInput), conf))
     }
 
   implicit def tcpACG: AsynchronousChannelGroup =

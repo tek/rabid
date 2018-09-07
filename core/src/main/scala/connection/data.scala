@@ -141,6 +141,8 @@ object Message
 
   def header: AMQPHeader = AMQPHeader(ByteVector('A', 'M', 'Q', 'P'), 0, 0, 9, 1)
 
+  def heartbeat: Frame = Frame.frame(FrameType.Heartbeat, 0, ByteVector.empty)
+
   implicit val Codec_Message: Codec[Message] =
     Codec.coproduct[Message].choice
 }

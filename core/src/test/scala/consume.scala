@@ -53,7 +53,7 @@ object ConsumeSpec
   def apply(): Stream[IO, Unit] =
     for {
       connection <- Connection.native("localhost", 5672)
-      _ <- StreamUtil.timed(2.seconds)(Rabid.run(Consumer())(connection, conf))
+      _ <- StreamUtil.timed(120.seconds)(Rabid.run(Consumer())(connection, conf))
     } yield ()
 }
 
