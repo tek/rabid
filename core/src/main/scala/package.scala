@@ -22,11 +22,15 @@ object `package`
   def openChannel(implicit ec: ExecutionContext): RabidIO[Channel] =
     Rabid.openChannel
 
-  def publishJsonIn[A: Encoder](exchange: String, route: String)(messages: List[A])
+  def publish(exchange: ExchangeConf, route: String)(messages: List[String])
   : ChannelStream[Unit] =
     ChannelStream.liftIO(messages.traverse(Rabid.publish1(exchange, route)).void)
 
-  def publishJson[A: Encoder](exchange: String, route: String)(messages: List[A])
+  def publishJsonIn[A: Encoder](exchange: ExchangeConf, route: String)(messages: List[A])
+  : ChannelStream[Unit] =
+    ChannelStream.liftIO(messages.traverse(Rabid.publishJson1(exchange, route)).void)
+
+  def publishJson[A: Encoder](exchange: ExchangeConf, route: String)(messages: List[A])
   (implicit ec: ExecutionContext)
   : RabidStream[Unit] =
     RabidStream.liftIO(io.publishJson[A](exchange, route)(messages))

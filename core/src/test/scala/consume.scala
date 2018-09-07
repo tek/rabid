@@ -24,22 +24,22 @@ object ConsumeEC
 
 object Consumer
 {
+  val exchange = ExchangeConf("ex", "topic", false)
+
   def apply(): RabidStream[Unit] =
     for {
       pubChannel <- RabidStream.liftIO(rabid.openChannel)
       _ <- RabidStream.liftF(
-        rabid.publishJsonIn("ex", "root")(List(Data(1), Data(2), Data(3), Data(4))).apply(pubChannel)
+        rabid.publishJsonIn(exchange, "root")(List(Data(1), Data(2), Data(3), Data(4))).apply(pubChannel)
       )
-      (ack, messages) <- rabid.consumeJson[Data](
-        ExchangeConf("ex", "topic", false), QueueConf("cue", true), "root", true
-      )
+      (ack, messages) <- rabid.consumeJson[Data](exchange, QueueConf("cue", true), "root", true)
       item <- RabidStream.liftF(messages)
       _ <- item match {
         case Consume.Message(_, tag) =>
           RabidStream.eval(ack(List(tag)))
         case Consume.JsonError(Delivery(data, tag), error) =>
           RabidStream.liftF(
-            rabid.publishJsonIn("ex", "root.error")(List(DataError(data, tag, error.toString)))
+            rabid.publishJsonIn(exchange, "root.error")(List(DataError(data, tag, error.toString)))
               .apply(pubChannel)
           )
       }
@@ -48,7 +48,7 @@ object Consumer
 
 object ConsumeSpec
 {
-  val conf = ConnectionConfig("admin", "admin1", "sprcom")
+  val conf = ConnectionConfig("test", "test", "/test")
 
   def apply(): Stream[IO, Unit] =
     for {

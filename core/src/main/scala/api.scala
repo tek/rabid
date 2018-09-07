@@ -92,11 +92,17 @@ object Rabid
       a <- ChannelIO.liftF(comm.dequeue1)
     } yield a
 
-  def publish1[A: Encoder](exchange: String, routingKey: String)(message: A): ChannelIO[Unit] =
+  def publish1(exchange: ExchangeConf, routingKey: String)(message: String): ChannelIO[Unit] =
     sendToChannel(
       s"publish to `$exchange` as `$routingKey`: $message",
-      programs.publish1(exchange, routingKey, message.asJson.spaces2),
+      for {
+      _ <- programs.declareExchange(exchange)
+      a <- programs.publish1(exchange.name, routingKey, message)
+      } yield a
     )
+
+  def publishJson1[A: Encoder](exchange: ExchangeConf, routingKey: String)(message: A): ChannelIO[Unit] =
+    publish1(exchange, routingKey)(message.asJson.spaces2)
 
   def consumeProg(stop: Signal[IO, Boolean])
   (exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
@@ -135,12 +141,12 @@ object Rabid
 
 object io
 {
-  def publishJson[A: Encoder](exchange: String, routingKey: String)(messages: List[A])
+  def publishJson[A: Encoder](exchange: ExchangeConf, routingKey: String)(messages: List[A])
   (implicit ec: ExecutionContext)
   : RabidIO[Unit] =
     for {
       channel <- Rabid.openChannel
-      _ <- RabidIO.liftF(messages.traverse(Rabid.publish1(exchange, routingKey)).void(channel))
+      _ <- RabidIO.liftF(messages.traverse(Rabid.publishJson1(exchange, routingKey)).void(channel))
     } yield ()
 
   def consumeJson[A: Decoder](exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
