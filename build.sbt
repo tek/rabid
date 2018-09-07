@@ -1,13 +1,12 @@
 import ReleaseTransformations._
 
 scalaVersion in ThisBuild := "2.12.6"
-releaseCrossBuild := true
 releaseProcess := Seq[ReleaseStep](
   checkSnapshotDependencies,
   inquireVersions,
   runClean,
   setReleaseVersion,
-  releaseStepCommandAndRemaining("+publishSigned"),
+  releaseStepCommandAndRemaining("publishSigned"),
   releaseStepCommand("sonatypeReleaseAll"),
   commitReleaseVersion,
   tagRelease,
