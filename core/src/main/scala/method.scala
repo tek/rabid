@@ -262,7 +262,7 @@ object Method
     case class DeclareOk(queue: ShortString, messageCount: Int, consumerCount: Int)
     extends Method
 
-    object DeclareOk
+    case object DeclareOk
     {
       implicit val codec: Codec[DeclareOk] =
         (shortstr :: int32 :: int32).as[DeclareOk]
@@ -312,6 +312,38 @@ object Method
 
   object basic
   {
+    case class Qos(
+      prefetchSize: Int,
+      prefetchCount: Short,
+      global: Bool,
+    )
+    extends Method
+
+    object Qos
+    {
+      implicit val codec: Codec[Qos] =
+        (int32 :: short16 :: boolean).as[Qos]
+
+      implicit val ClassId_Qos: ClassId[Qos] =
+        ClassId.basic
+
+      implicit val MethodId_Qos: MethodId[Qos] =
+        MethodId(10)
+    }
+
+    case object QosOk
+    extends Method
+    {
+      implicit val codec: Codec[QosOk.type] =
+        Empty(QosOk)
+
+      implicit val ClassId_QosOk: ClassId[QosOk.type] =
+        ClassId.basic
+
+      implicit val MethodId_QosOk: MethodId[QosOk.type] =
+        MethodId(11)
+    }
+
     case class Consume(
       ticket: Short,
       queue: ShortString,

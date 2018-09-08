@@ -68,5 +68,8 @@ object method
 
     def ack(deliveryTag: Long, multiple: Boolean): Method.basic.Ack =
       Method.basic.Ack(deliveryTag, multiple)
+
+    def qos(prefetchSize: Int, prefetchCount: Short): Method.basic.Qos =
+      Method.basic.Qos(prefetchSize, prefetchCount, Bool(true))
   }
 }

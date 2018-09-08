@@ -35,7 +35,7 @@ object ConnectionA
   case class NotifyChannel(number: Short, input: ChannelInput)
   extends ConnectionA[Unit]
 
-  case class OpenChannel(channel: Channel)
+  case class OpenChannel(channel: Channel, qos: QosConf)
   extends ConnectionA[Unit]
 
   case class ChannelOpened(number: Short, id: String)

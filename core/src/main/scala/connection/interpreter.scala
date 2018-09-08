@@ -15,7 +15,6 @@ import cats.~>
 import cats.data.{EitherT, OptionT}
 import cats.effect.IO
 import cats.implicits._
-import _root_.io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 import channel.{ChannelConnection, Channel, ChannelInput, ChannelMessage}
 
@@ -56,11 +55,11 @@ object Interpreter
       numbers <- ConnectionA.State.inspect(_.channels.keys)
     } yield smallestUnused(numbers).toShort
 
-  def consChannel(channel: Channel)
+  def consChannel(channel: Channel, qos: QosConf)
   : ConnectionA.State[ChannelConnection] =
     for {
       number <- unusedChannelNumber
-    } yield ChannelConnection(number.toShort, channel, channel.receive)
+    } yield ChannelConnection(number.toShort, channel, channel.receive, qos)
 
   def channelConnection(number: Short): ConnectionA.Effect[ChannelConnection] =
     for {
@@ -84,10 +83,10 @@ object Interpreter
       _ <- ConnectionA.State.eval(connection.channel.exchange.in.enqueue1(thunk))
     } yield ()
 
-  def createChannel(channel: Channel)
+  def createChannel(channel: Channel, qos: QosConf)
   : ConnectionA.State[Unit] =
     for {
-      connection <- consChannel(channel)
+      connection <- consChannel(channel, qos)
       _ <- startChannel(connection)(Channel.run(connection))
     } yield ()
 
@@ -136,19 +135,16 @@ object Interpreter
     for {
       response <- Pull.eval(receiveFrame(client).value)
       a <- response match {
-        case Some(a) => Pull.output1(a) >> Pull.pure(Some(()))
-        case None => Pull.pure(Some(()))
+        case Some(a) => Pull.output1(a) >> Pull.pure(Some(state))
+        case None => Pull.pure(Some(state))
       }
-    } yield a.map(_ => state)
+    } yield a
 
   def listenRabbit(client: tcp.Socket[IO]): Stream[IO, Input] =
     Pull.loop(listenRabbitLoop(client))(()).stream
 
   def log(message: String): IO[Unit] =
-    for {
-      logger <- Slf4jLogger.fromName[IO]("connection")
-      _ <- logger.info(message)
-    } yield ()
+    Log.info[IO]("connection", message)
 
   def nativeInterpreter(client: tcp.Socket[IO])
   : ConnectionA ~> ConnectionA.Effect =
@@ -167,18 +163,18 @@ object Interpreter
             notifyChannel(number, input)
           case ConnectionA.Log(message) =>
             ConnectionA.Effect.eval(log(message))
-          case ConnectionA.OpenChannel(channel) =>
-            EitherT.liftF(createChannel(channel))
+          case ConnectionA.OpenChannel(channel, qos) =>
+            EitherT.liftF(createChannel(channel, qos))
           case ConnectionA.ChannelOpened(_, _) =>
             EitherT.pure(())
         }
       }
     }
 
-  def native(host: String, port: Int)
+  def native(host: String, port: Short)
   (implicit ec: ExecutionContext, ag: AsynchronousChannelGroup)
   : Stream[IO, (Stream[IO, Input], ConnectionA ~> ConnectionA.Effect)] =
     for {
-      client <- tcp.client[IO](new InetSocketAddress(host, port))
+      client <- tcp.client[IO](new InetSocketAddress(host, port.toInt))
     } yield (listenRabbit(client), (nativeInterpreter(client)))
 }

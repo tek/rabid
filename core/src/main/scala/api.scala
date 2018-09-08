@@ -10,7 +10,7 @@ import _root_.io.circe.{Encoder, Decoder, Error}
 import _root_.io.circe.syntax._
 import _root_.io.circe.parser._
 
-import connection.{Connection, Input, ConnectionConfig}
+import connection.{Connection, Input}
 import channel.{Channel, ChannelA, ChannelInput, ChannelOutput, programs, ChannelMessage, ExchangeConf, QueueConf}
 import channel.{Delivery, DeliveryTag}
 
@@ -24,6 +24,14 @@ object Consume
   case class JsonError[A](delivery: Delivery, error: Error)
   extends Consume[A]
 }
+
+case class ServerConf(host: String, port: Short)
+
+case class ConnectionConf(user: String, password: String, vhost: String)
+
+case class QosConf(prefetchSize: Int, prefetchCount: Short)
+
+case class RabidConf(server: ServerConf, connection: ConnectionConf, qos: QosConf)
 
 object Api
 {
@@ -42,20 +50,20 @@ case class Rabid(queue: Queue[IO, Input])
 object Rabid
 {
   def native[A]
-  (host: String, port: Int, conf: ConnectionConfig)
+  (conf: RabidConf)
   (consume: RabidStream[A])
   (implicit ec: ExecutionContext)
   : Stream[IO, A] =
     for {
-      connection <- Connection.native(host, port)
-      a <- run(consume)(connection, conf)
+      connection <- Connection.native(conf)
+      a <- run(consume)(connection)
     } yield a
 
-  def run[A](consume: RabidStream[A])(connection: Connection, conf: ConnectionConfig)
+  def run[A](consume: RabidStream[A])(connection: Connection)
   (implicit ec: ExecutionContext)
   : Stream[IO, A] =
     for {
-      (rabid, main) <- Stream.eval(Connection.start(connection, conf))
+      (rabid, main) <- Stream.eval(Connection.start(connection))
       a <- consume(rabid).concurrently(main)
     } yield a
 

@@ -28,11 +28,12 @@ object Channel
 
   type Prog = ChannelA.Step[PNext]
 
-  def disconnected(number: Short)(input: ChannelInput): State[ProcessData[ChannelInput], ChannelA.Internal] =
+  def disconnected(number: Short, conf: QosConf)(input: ChannelInput)
+  : State[ProcessData[ChannelInput], ChannelA.Internal] =
     for {
       _ <- Process.buffer(input)
       _ <- Process.transition(PState.Connecting)
-    } yield programs.createChannel(number)
+    } yield programs.createChannel(number, conf)
 
   def connecting: ChannelInput => State[ProcessData[ChannelInput], ChannelA.Internal] = {
     case ChannelInput.Opened =>
@@ -52,9 +53,10 @@ object Channel
       ChannelA.pure(PNext.Exit)
   }
 
-  def execute(number: Short): PState => ChannelInput => State[ProcessData[ChannelInput], ChannelA.Internal] = {
+  def execute(number: Short, conf: QosConf)
+  : PState => ChannelInput => State[ProcessData[ChannelInput], ChannelA.Internal] = {
     case PState.Disconnected =>
-      disconnected(number)
+      disconnected(number, conf)
     case PState.Connecting =>
       connecting
     case PState.Connected =>
@@ -69,7 +71,7 @@ object Channel
   : Stream[IO, Input] = {
     val processData = ProcessData.cons[ChannelInput]("connection", state)
     val data = ChannelData.cons(channel.number, state)
-    val loop = Process.loop(Interpreter.interpreter(channel), execute(channel.number), processData, data)
+    val loop = Process.loop(Interpreter.interpreter(channel), execute(channel.number, channel.qos), processData, data)
     channelInput(channel).through(a => loop(a).stream)
   }
 

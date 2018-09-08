@@ -31,6 +31,7 @@ case class ChannelConnection(
   number: Short,
   channel: Channel,
   receive: Queue[IO, ChannelMessage],
+  qos: QosConf,
 )
 
 case class ChannelData(number: Short, state: PState, buffer: Vector[ChannelInput])

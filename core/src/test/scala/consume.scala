@@ -9,7 +9,7 @@ import cats.effect.IO
 import _root_.io.circe.generic.auto._
 import org.specs2.Specification
 
-import connection.{Connection, ConnectionConfig}
+import connection.Connection
 import channel.{ExchangeConf, QueueConf, Delivery, DeliveryTag}
 import ConsumeEC.ec
 
@@ -48,12 +48,12 @@ object Consumer
 
 object ConsumeSpec
 {
-  val conf = ConnectionConfig("test", "test", "/test")
+  val conf = RabidConf(ServerConf("localhost", 5672), ConnectionConf("test", "test", "/test"), QosConf(0, 100.toShort))
 
   def apply(): Stream[IO, Unit] =
     for {
-      connection <- Connection.native("localhost", 5672)
-      _ <- StreamUtil.timed(120.seconds)(Rabid.run(Consumer())(connection, conf))
+      connection <- Connection.native(conf)
+      _ <- StreamUtil.timed(2.seconds)(Rabid.run(Consumer())(connection))
     } yield ()
 }
 

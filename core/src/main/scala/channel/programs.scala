@@ -40,12 +40,20 @@ object programs
       }
     } yield output
 
-  def createChannel(number: Short): ChannelA.Internal =
+  def qos(conf: QosConf): ChannelA.Internal =
+    for {
+      _ <- log(s"configuring qos with $conf")
+      _ <- sendMethod(method.basic.qos(conf.prefetchSize, conf.prefetchCount))
+      _ <- receiveMethod[Method.basic.QosOk.type]
+    } yield PNext.Regular
+
+  def createChannel(number: Short, conf: QosConf): ChannelA.Internal =
     for {
       _ <- log(s"creating channel $number")
       _ <- sendMethod(method.channel.open)
       openOk <- receiveMethod[Method.channel.OpenOk]
       _ <- channelOpened
+      _ <- qos(conf)
       _ <- connectionOutput(Input.ChannelOpened(number, openOk.channelId.data))
     } yield PNext.Regular
 
