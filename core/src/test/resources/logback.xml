@@ -4,10 +4,9 @@
       <level>INFO</level>
     </filter>
     <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <Pattern>%-5level %logger{36} - %msg %mdc%n</Pattern>
+      <Pattern>%highlight(%-5level) %magenta(%4r) %yellow(%logger{36}) - %msg %mdc%n</Pattern>
     </encoder>
   </appender>
-
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />
   </root>
