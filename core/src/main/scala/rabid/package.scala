@@ -1,11 +1,11 @@
 package rabid
 
-import _root_.io.circe.{Decoder, Encoder}
 import cats.data.Kleisli
 import cats.effect.{ContextShift, IO}
 import cats.implicits._
 import channel.{Channel, DeliveryTag, ExchangeConf, QueueConf}
 import fs2.Stream
+import io.circe.{Decoder, Encoder}
 
 object `package`
 {
@@ -30,10 +30,10 @@ object `package`
   def publishJson[A: Encoder](exchange: ExchangeConf, route: String)(messages: List[A])
   (implicit cs: ContextShift[IO])
   : RabidStream[Unit] =
-    RabidStream.liftIO(io.publishJson[A](exchange, route)(messages))
+    RabidStream.liftIO(IOApi.publishJson[A](exchange, route)(messages))
 
   def consumeJson[A: Decoder](exchange: ExchangeConf, queue: QueueConf, route: String, ack: Boolean)
   (implicit cs: ContextShift[IO])
   : RabidStream[(List[DeliveryTag] => IO[Unit], Stream[IO, Consume[A]])] =
-    RabidStream.liftIO(io.consumeJson[A](exchange, queue, route, ack))
+    RabidStream.liftIO(IOApi.consumeJson[A](exchange, queue, route, ack))
 }

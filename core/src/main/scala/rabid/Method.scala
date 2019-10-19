@@ -1,10 +1,10 @@
 package rabid
 
 import scodec.Codec
-import scodec.codecs._
 import scodec.bits.BinStringSyntax
+import scodec.codecs._
 
-import Field.{ShortString, LongString, Table, Bool}
+import Field.{Bool, LongString, ShortString, Table}
 import Field.codecs._
 
 case class ClassId[A](id: Short)

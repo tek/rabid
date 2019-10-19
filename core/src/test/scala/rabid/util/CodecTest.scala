@@ -4,7 +4,7 @@ import cats.effect.IO
 import scodec.{Attempt, Decoder, Encoder}
 import xpct.Xp
 
-object CodecSpec
+object CodecTest
 extends Test
 {
   def code[A: Encoder: Decoder](a: A): Attempt[A] =

@@ -26,10 +26,7 @@ case class Queue(name: String, channel: Channel)
          programs.consume1(name, signal),
        )(channel)
       data <- signal.discrete.unNone.head
-    } yield for {
-      message <- data
-      a <- decode[A](message).leftMap(_.toString)
-    } yield a
+    } yield data.flatMap(decode[A]).leftMap(_.toString)
 }
 
 case class Exchange(name: String, channel: Channel)
@@ -59,11 +56,11 @@ case class ChannelApi(channel: Channel)
   def queue(conf: QueueConf): Stream[IO, Queue] =
     Api.send(s"declare queue `${conf.name}`", programs.declareQueue(conf))(channel).as(Queue(conf.name, channel))
 
-  def boundQueue(exchange: ExchangeConf, queue: QueueConf, routingKey: String): Stream[IO, BoundQueue] =
+  def boundQueue(exchangeConf: ExchangeConf, queueConf: QueueConf, routingKey: String): Stream[IO, BoundQueue] =
     for {
-      ex <- this.exchange(exchange)
-      q <- this.queue(queue)
-      _ <- Api.bindQueue(exchange.name, queue.name, routingKey)(channel)
+      ex <- exchange(exchangeConf)
+      q <- queue(queueConf)
+      _ <- Api.bindQueue(exchangeConf.name, queueConf.name, routingKey)(channel)
     } yield BoundQueue(ex, q, routingKey, channel)
 
   def simpleQueue(name: String): Stream[IO, BoundQueue] =

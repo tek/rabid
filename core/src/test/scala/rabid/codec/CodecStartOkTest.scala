@@ -3,9 +3,9 @@ package rabid
 import connection._
 import scodec.Encoder
 
-import CodecSpec._
+import CodecTest._
 
-object CodecStartOkSpec
+object CodecStartOkTest
 {
   import Field._
 
@@ -39,8 +39,8 @@ object CodecStartOkSpec
   val frame = connection.Message.Frame(FrameType.Method, 0, bytes.size.toInt, bytes, connection.Message.Frame.end)
 }
 
-class CodecStartOkSpec
+class CodecStartOkTest
 extends Test
 {
-  test("codec a frame")(checkCode(CodecStartOkSpec.frame))
+  test("codec a frame")(checkCode(CodecStartOkTest.frame))
 }

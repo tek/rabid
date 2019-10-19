@@ -1,9 +1,9 @@
 package rabid
 package channel
 
+import cats.effect.IO
 import fs2.concurrent.Queue
 import scodec.bits.ByteVector
-import cats.effect.IO
 
 case class ChannelOutput(message: Delivery)
 

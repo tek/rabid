@@ -3,7 +3,6 @@ package connection
 
 import cats.free.Free
 import cats.implicits._
-
 import channel.{Channel, ChannelA, ChannelInput}
 
 object programs

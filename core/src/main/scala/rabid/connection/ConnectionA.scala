@@ -1,14 +1,13 @@
 package rabid
 package connection
 
-import fs2.Pull
-import scodec.{Encoder, Decoder, DecodeResult, Err}
-import scodec.bits.{ByteVector, BitVector}
 import cats.data.{EitherT, StateT}
 import cats.effect.IO
 import cats.free.Free
-
 import channel.{Channel, ChannelInput}
+import fs2.Pull
+import scodec.{DecodeResult, Decoder, Encoder, Err}
+import scodec.bits.{BitVector, ByteVector}
 
 sealed trait ConnectionA[A]
 

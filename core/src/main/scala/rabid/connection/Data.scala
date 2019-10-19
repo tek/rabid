@@ -3,16 +3,15 @@ package connection
 
 import scala.annotation.tailrec
 
+import cats.effect.IO
+import cats.implicits._
+import channel.Channel
 import fs2.concurrent.Queue
-import scodec.{Encoder, Decoder, Codec, Attempt}
+import scodec.{Attempt, Codec, Decoder, Encoder}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.codecs.implicits._
-import cats.effect.IO
-import cats.implicits._
-import shapeless.{HNil, ::}
-
-import channel.Channel
+import shapeless.{::, HNil}
 
 sealed trait FrameType
 

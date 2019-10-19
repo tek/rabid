@@ -1,10 +1,10 @@
 package rabid
 
-import fs2.Chunk
-import scodec.bits.{BitVector, ByteVector}
-import scodec.{Codec, Encoder, Decoder, Attempt, DecodeResult, Err}
-import scodec.codecs._
 import cats.syntax.either._
+import fs2.Chunk
+import scodec.{Attempt, Codec, DecodeResult, Decoder, Encoder, Err}
+import scodec.bits.{BitVector, ByteVector}
+import scodec.codecs._
 
 object Encode
 {
